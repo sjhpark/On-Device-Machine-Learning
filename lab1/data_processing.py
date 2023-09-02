@@ -12,11 +12,17 @@ import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import Dataset, DataLoader
 
+# configs
+config = load_yaml('config')
+
 #################### SST Language Data ####################
 # SST Data Processor 
 class SSTDataProcessor:
     def __init__(self):
-        self.lang_dir = load_yaml('paths')['SST_data_dir']
+        # self.lang_dir = load_yaml('config')['paths']['SST_data_dir']
+        self.lang_dir = config['paths']['SST_data_dir']
+        self.lang_train_df = self.train_file()
+        self.lang_dev_df = self.dev_file()
 
     def train_file(self):
         lang_train_label = []
@@ -29,8 +35,9 @@ class SSTDataProcessor:
                 lang_train_txt.append(row[0])
 
         # convert to pd dataframe
-        self.lang_train_df = pd.DataFrame({"labels": lang_train_label, "sentence": lang_train_txt})
-        self.lang_train_df = self.lang_train_df.iloc[1:]
+        lang_train_df = pd.DataFrame({"labels": lang_train_label, "sentence": lang_train_txt})
+        lang_train_df = lang_train_df.iloc[1:]
+        return lang_train_df
 
     def dev_file(self):
     # development file
@@ -44,8 +51,9 @@ class SSTDataProcessor:
                 lang_dev_label.append(row[1])
 
         # convert to pd dataframe
-        self.lang_dev_df = pd.DataFrame({"labels": lang_dev_label, "sentence": lang_dev_txt})
-        self.lang_dev_df = self.lang_dev_df.iloc[1:]
+        lang_dev_df = pd.DataFrame({"labels": lang_dev_label, "sentence": lang_dev_txt})
+        lang_dev_df = lang_dev_df.iloc[1:]
+        return lang_dev_df
 
     def labels(self):
         # train labels
@@ -55,7 +63,6 @@ class SSTDataProcessor:
         # dev labels
         lang_dev_labels = [int(i) for i in self.lang_dev_df['labels']] # convert str to int
         print(f"The number of dev labels: {len(lang_dev_labels)}")
-
         return lang_train_labels, lang_dev_labels
 
     def features(self):
@@ -66,7 +73,8 @@ class SSTDataProcessor:
                 vocabs[word] = 0
 
         # train features
-        if "lang_train_features.pkl" not in os.listdir(self.lang_dir):
+        if "lang_train_features.pkl" not in os.listdir("out/"):
+            print("parsing train features...")
             lang_train_features = []
             for sentence in tqdm(self.lang_train_df["sentence"]):
                 bow_train = copy.deepcopy(vocabs)
@@ -74,15 +82,16 @@ class SSTDataProcessor:
                     if word in bow_train:
                         bow_train[word] += 1
                 lang_train_features.append(list(bow_train.values()))
-            with open('datasets/SST-2/features/lang_train_features.pkl', 'wb') as f:
+            with open('out/lang_train_features.pkl', 'wb') as f:
                 pickle.dump(lang_train_features, f)
         else:
             print("loading train features...")
-            with open('datasets/SST-2/features/lang_train_features.pkl', 'rb') as f:
+            with open('out/lang_train_features.pkl', 'rb') as f:
                 lang_train_features = pickle.load(f)
 
         # dev features
-        if "lang_dev_features.pkl" not in os.listdir(self.lang_dir):
+        if "lang_dev_features.pkl" not in os.listdir("out/"):
+            print("parsing dev features...")
             lang_dev_features = []
             for sentence in tqdm(self.lang_dev_df["sentence"]):
                 bow_dev = copy.deepcopy(vocabs)
@@ -91,11 +100,11 @@ class SSTDataProcessor:
                     if word in bow_dev:
                         bow_dev[word] += 1
                 lang_dev_features.append(list(bow_dev.values()))
-            with open('datasets/SST-2/features/lang_dev_features.pkl', 'wb') as f:
+            with open('out/lang_dev_features.pkl', 'wb') as f:
                 pickle.dump(lang_dev_features, f)
         else:
             print("loading dev features...")
-            with open('datasets/SST-2/features/lang_dev_features.pkl', 'rb') as f:
+            with open('out/lang_dev_features.pkl', 'rb') as f:
                 lang_dev_features = pickle.load(f)
         
         return lang_train_features, lang_dev_features
@@ -118,31 +127,41 @@ class Lang_Dataset(Dataset):
 # MNIST Data Processor
 class MNISTDataProcessor:
     def __init__(self):
-        self.vision_dir = load_yaml('paths')['MNIST_data_dir']
+        # self.vision_dir = load_yaml('config')['paths']['MNIST_data_dir']
+        self.vision_dir = config['paths']['MNIST_data_dir']
+        self.vision_train = self.train_file()
+        self.vision_test = self.test_file()
     
     def train_file(self):
-        self.vision_train = pd.read_csv(os.path.join(self.vision_dir, 'mnist_train.csv'), header=None)
-        self.vision_train.rename(columns={0: "labels"}, inplace=True)
+        vision_train = pd.read_csv(os.path.join(self.vision_dir, 'mnist_train.csv'), header=None)
+        vision_train.rename(columns={0: "labels"}, inplace=True)
+        return vision_train
     
     def test_file(self):
-        self.vision_test = pd.read_csv(os.path.join(self.vision_dir, 'mnist_test.csv'), header=None)
-        self.vision_test.rename(columns={0: "labels"}, inplace=True)
+        vision_test = pd.read_csv(os.path.join(self.vision_dir, 'mnist_test.csv'), header=None)
+        vision_test.rename(columns={0: "labels"}, inplace=True)
+        return vision_test
     
     def labels(self):
-        # labels of vision_train
-        vision_train_labels = self.vision_train["labels"]
-
-        # labels of vision_test
-        vision_test_labels = self.vision_test["labels"]
+        vision_train_labels = self.vision_train["labels"].tolist()
+        print(f"The number of train labels: {len(vision_train_labels)}")
+        vision_test_labels = self.vision_test["labels"].tolist()
+        print(f"The number of test labels: {len(vision_test_labels)}")
 
         return vision_train_labels, vision_test_labels
 
     def features(self):
+        print("parsing train features...")
         # normalize each row of vision_train[:, 1:]
         vision_train_features = self.vision_train.iloc[:, 1:].apply(lambda x: (x-np.mean(x))/np.std(x), axis=1)
 
+        print("parsing test features...")
         # normalize each row of vision_test[:, 1:]
         vision_test_features = self.vision_test.iloc[:, 1:].apply(lambda x: (x-np.mean(x))/np.std(x), axis=1)
+
+        # convert to list
+        vision_train_features = vision_train_features.values.tolist()
+        vision_test_features = vision_test_features.values.tolist()
 
         return vision_train_features, vision_test_features
 
@@ -156,6 +175,6 @@ class Vision_Dataset(Dataset):
         return len(self.features)
     
     def __getitem__(self, idx):
-        feature = torch.tensor(self.features.iloc[idx], dtype=torch.float32)
+        feature = torch.tensor(self.features[idx], dtype=torch.float32)
         label = torch.tensor(self.labels[idx], dtype=torch.long)
         return feature, label
