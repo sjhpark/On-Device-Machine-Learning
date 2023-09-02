@@ -66,6 +66,3 @@ if __name__ == '__main__':
         train_dataloader=vision_train_dataloader, 
         dev_dataloader=vision_test_dataloader, 
         device=device)
-
-    
-
