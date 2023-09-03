@@ -45,7 +45,6 @@ if __name__ == '__main__':
         dev_dataloader=lang_dev_dataloader, 
         device=device)
 
-
     elif args.dataset == 'MNIST':
         vision_train_labels, vision_test_labels = MNISTDataProcessor().labels()
         vision_train_features, vision_test_features = MNISTDataProcessor().features()
