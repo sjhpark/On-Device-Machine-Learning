@@ -4,6 +4,7 @@ import pandas as pd
 from tqdm import tqdm
 import time
 import torch
+import torch.nn as nn
 
 def load_yaml(filename):
     # LOAD YAML FILE
@@ -11,12 +12,33 @@ def load_yaml(filename):
         output = yaml.safe_load(f)
     return output
 
+def get_layers(model):
+    # reference: https://saturncloud.io/blog/pytorch-get-all-layers-of-model-a-comprehensive-guide/
+    layers = []
+    for name, module in model.named_children():
+        if isinstance(module, nn.Sequential):
+            layers += get_layers(module)
+        elif isinstance(module, nn.ModuleList):
+            for m in module:
+                layers += get_layers(m)
+        else:
+            layers.append(module)
+    return layers
+
 def benchmarking(func):
     def wrapper(*args, **kwargs):
         # COUNT THE NUMBER OF PARAMETERS
         model = kwargs['model']
         num_params = sum(params.numel() for params in model.parameters())
-        print(f"The total number of parameters in {model.__class__.__name__}: {num_params:,}.")
+        print(f"The total number of parameters in {model.__class__.__name__}: {num_params:,}")
+
+        # Count FLOPs Operations of Linear Layers
+        layers = get_layers(model)
+        fc_layers = [layer for layer in layers if isinstance(layer, nn.Linear)]
+        FLOPs = 0
+        for _, fc_layer in enumerate(fc_layers):
+            FLOPs += 2 * fc_layer.in_features * fc_layer.out_features
+        print(f"The total FLOPs of linear layers in {model.__class__.__name__}: {FLOPs:,}")
 
         # COUNT TRAINING TIME
         begin = time.time()
