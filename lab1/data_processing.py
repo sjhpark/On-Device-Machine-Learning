@@ -12,6 +12,9 @@ import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import Dataset, DataLoader
 
+import torchtext
+from torchtext.data import get_tokenizer
+
 # configs
 config = load_yaml('config')
 
@@ -19,30 +22,33 @@ config = load_yaml('config')
 # SST Data Processor 
 class SSTDataProcessor:
     def __init__(self):
-        # self.lang_dir = load_yaml('config')['paths']['SST_data_dir']
         self.lang_dir = config['paths']['SST_data_dir']
-        self.lang_train_df = self.train_file()
+        self.tokenizer = get_tokenizer('basic_english')
+        self.lang_train_df, self.vocabs = self.train_file()
         self.lang_dev_df = self.dev_file()
 
     def train_file(self):
         lang_train_label = []
         lang_train_txt = []
+        vocabs = []
         assert 'train.tsv' in os.listdir(self.lang_dir), 'train.tsv not found in SST data directory'
         with open(os.path.join(self.lang_dir, 'train.tsv')) as f:
             reader = csv.reader(f, delimiter="\t")
             for row in reader:
                 lang_train_label.append(row[1])
                 lang_train_txt.append(row[0])
+                vocabs += self.tokenizer(row[0])
 
         # convert to pd dataframe
         lang_train_df = pd.DataFrame({"labels": lang_train_label, "sentence": lang_train_txt})
         lang_train_df = lang_train_df.iloc[1:]
-        return lang_train_df
+        vocabs = {word: 0 for word in list(set(vocabs))}
+        return lang_train_df, vocabs
 
     def dev_file(self):
     # development file
-        lang_dev_txt = []
         lang_dev_label = []
+        lang_dev_txt = []
         assert 'dev.tsv' in os.listdir(self.lang_dir), 'dev.tsv not found in SST data directory'
         with open(os.path.join(self.lang_dir, 'dev.tsv')) as f:
             reader = csv.reader(f, delimiter="\t")
@@ -67,43 +73,36 @@ class SSTDataProcessor:
 
     def features(self):
         # train features
-        vocabs = {} # vocabs
-        for sentence in self.lang_train_df["sentence"]:
-            for word in sentence.split():
-                vocabs[word] = 0
-
-        # train features
         if "lang_train_features.pkl" not in os.listdir("out/"):
-            print("parsing train features...")
+            print("saving train features as a pkl file...")
             lang_train_features = []
             for sentence in tqdm(self.lang_train_df["sentence"]):
-                bow_train = copy.deepcopy(vocabs)
-                for word in sentence.split():
-                    if word in bow_train:
-                        bow_train[word] += 1
-                lang_train_features.append(list(bow_train.values()))
+                vocabs = copy.deepcopy(self.vocabs)
+                for word in self.tokenizer(sentence):
+                    if word in vocabs:
+                        vocabs[word] += 1
+                lang_train_features.append(list(vocabs.values()))
             with open('out/lang_train_features.pkl', 'wb') as f:
                 pickle.dump(lang_train_features, f)
         else:
-            print("loading train features...")
+            print("parsing train features...")
             with open('out/lang_train_features.pkl', 'rb') as f:
                 lang_train_features = pickle.load(f)
 
         # dev features
         if "lang_dev_features.pkl" not in os.listdir("out/"):
-            print("parsing dev features...")
+            print("saving dev features as a pkl file...")
             lang_dev_features = []
             for sentence in tqdm(self.lang_dev_df["sentence"]):
-                bow_dev = copy.deepcopy(vocabs)
-                for word in sentence.split():
-                    bow_dev = copy.deepcopy(vocabs)
-                    if word in bow_dev:
-                        bow_dev[word] += 1
-                lang_dev_features.append(list(bow_dev.values()))
+                vocabs = copy.deepcopy(self.vocabs)
+                for word in self.tokenizer(sentence):
+                    if word in vocabs:
+                        vocabs[word] += 1
+                lang_dev_features.append(list(vocabs.values()))
             with open('out/lang_dev_features.pkl', 'wb') as f:
                 pickle.dump(lang_dev_features, f)
         else:
-            print("loading dev features...")
+            print("parsing dev features...")
             with open('out/lang_dev_features.pkl', 'rb') as f:
                 lang_dev_features = pickle.load(f)
         
@@ -127,7 +126,6 @@ class Lang_Dataset(Dataset):
 # MNIST Data Processor
 class MNISTDataProcessor:
     def __init__(self):
-        # self.vision_dir = load_yaml('config')['paths']['MNIST_data_dir']
         self.vision_dir = config['paths']['MNIST_data_dir']
         self.vision_train = self.train_file()
         self.vision_test = self.test_file()
