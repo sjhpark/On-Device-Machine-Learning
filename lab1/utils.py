@@ -11,13 +11,19 @@ def load_yaml(filename):
         output = yaml.safe_load(f)
     return output
 
-def compute_time(func):
-    def timer(*args, **kwargs):
+def benchmarking(func):
+    def wrapper(*args, **kwargs):
+        # COUNT THE NUMBER OF PARAMETERS
+        model = kwargs['model']
+        num_params = sum(params.numel() for params in model.parameters())
+        print(f"The total number of parameters in {model.__class__.__name__}: {num_params:,}.")
+
+        # COUNT TRAINING TIME
         begin = time.time()
         func(*args, **kwargs)
         end = time.time()
         print(f"Time taken for running {func.__name__}: {(end - begin):.3f}s")
-    return timer
+    return wrapper
 
 def computer_inference_latency_GPU(model, dummy_features, device, iterations=100):
     assert device == torch.device("cuda"), "This method is valid only for GPU as your device."
@@ -43,7 +49,7 @@ def computer_inference_latency_GPU(model, dummy_features, device, iterations=100
     mean_time = np.sum(time_array) / iterations # mean inference time
     print(f"Mean inference time: {mean_time:.3f}ms")
 
-@compute_time
+@benchmarking
 def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader, device):
     for epoch in range(epochs):
         inputs_count = 0
@@ -103,6 +109,3 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
         # MEAN INFERENCE TIME PER INPUT DATA PER EPOCH
         mean_time = total_time / inputs_count * 1000 # in [ms]
         print(f"Mean inference time per input data for epoch {epoch}: {mean_time:.6f}ms")
-
-
-    

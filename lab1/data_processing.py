@@ -69,6 +69,7 @@ class SSTDataProcessor:
         # dev labels
         lang_dev_labels = [int(i) for i in self.lang_dev_df['labels']] # convert str to int
         print(f"The number of dev labels: {len(lang_dev_labels)}")
+        
         return lang_train_labels, lang_dev_labels
 
     def features(self):
