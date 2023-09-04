@@ -38,7 +38,7 @@ def benchmarking(func):
         FLOPs = 0
         for _, fc_layer in enumerate(fc_layers):
             FLOPs += 2 * fc_layer.in_features * fc_layer.out_features
-        print(f"The total FLOPs of linear layers in {model.__class__.__name__}: {FLOPs:,}")
+        print(f"The total FLOPs of {len(fc_layers)} linear layers in {model.__class__.__name__}: {FLOPs:,}")
 
         # COUNT TRAINING TIME
         begin = time.time()
@@ -72,7 +72,7 @@ def computer_inference_latency_GPU(model, dummy_features, device, iterations=100
     print(f"Mean inference time: {mean_time:.3f}ms")
 
 @benchmarking
-def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader, device):
+def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader, device, eval):
     for epoch in range(epochs):
         inputs_count = 0
         total_time = 0.0 # total inference time
@@ -102,32 +102,34 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
             loss.backward()
             # WEIGHTS UPDATE
             optimizer.step()
-
-        # ACCURACY COMPUTATION
-        model.eval()
-        with torch.no_grad():
-            train_correct = 0
-            for data in train_dataloader:
-                features, labels = data
-                features = features.to(device)
-                labels = labels.to(device)
-                outputs = model(features)
-                _, predicted = torch.max(outputs.data, dim=1)
-                train_correct += (predicted == labels).sum().item()
-                train_acc = train_correct / len(train_dataloader.dataset) * 100
-            # EVAL
-            dev_correct = 0
-            for data in dev_dataloader:
-                features, labels = data
-                features = features.to(device)
-                labels = labels.to(device)
-                outputs = model(features)
-                _, predicted = torch.max(outputs.data, dim=1)
-                dev_correct += (predicted == labels).sum().item()
-            dev_acc = dev_correct / len(dev_dataloader.dataset) * 100
-        # PRINT STATISTICS
-        print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Eval Accuracy: {dev_acc:.3f}%")
-
+        
         # MEAN INFERENCE TIME PER INPUT DATA PER EPOCH
         mean_time = total_time / inputs_count * 1000 # in [ms]
         print(f"Mean inference time per input data for epoch {epoch}: {mean_time:.6f}ms")
+
+        # ACCURACY COMPUTATION PER EPOCH
+        if eval:
+            print("Evaluating...")
+            model.eval()
+            with torch.no_grad():
+                train_correct = 0
+                for data in train_dataloader:
+                    features, labels = data
+                    features = features.to(device)
+                    labels = labels.to(device)
+                    outputs = model(features)
+                    _, predicted = torch.max(outputs.data, dim=1)
+                    train_correct += (predicted == labels).sum().item()
+                    train_acc = train_correct / len(train_dataloader.dataset) * 100
+                # EVAL
+                dev_correct = 0
+                for data in dev_dataloader:
+                    features, labels = data
+                    features = features.to(device)
+                    labels = labels.to(device)
+                    outputs = model(features)
+                    _, predicted = torch.max(outputs.data, dim=1)
+                    dev_correct += (predicted == labels).sum().item()
+                dev_acc = dev_correct / len(dev_dataloader.dataset) * 100
+            # PRINT STATISTICS
+            print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Eval Accuracy: {dev_acc:.3f}%")
