@@ -32,7 +32,7 @@ def benchmarking(func):
         num_params = sum(params.numel() for params in model.parameters())
         print(f"The total number of parameters in {model.__class__.__name__}: {num_params:,}")
 
-        # Count FLOPs Operations of Linear Layers
+        # COUNT FLOPs OF LINEAR LAYERS
         layers = get_layers(model)
         fc_layers = [layer for layer in layers if isinstance(layer, nn.Linear)]
         FLOPs = 0
