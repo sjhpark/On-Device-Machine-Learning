@@ -20,11 +20,17 @@ if __name__ == '__main__':
     # config
     config = load_yaml('config')
 
-    # criterion (loss function)
-    criterion = nn.CrossEntropyLoss()
-
     # device 
     device = torch.device(config['device'])
+    print(f"Device: {device}")
+
+    # flags
+    print(f"Bias: {args.bias}")
+    print(f"Evaluation mode: {args.eval}")
+
+     # criterion (loss function)
+    criterion = nn.CrossEntropyLoss()
+    print(f"Loss function: {criterion.__class__.__name__}")
 
     if args.dataset == 'SST':
         lang_train_labels, lang_dev_labels = SSTDataProcessor().labels()
