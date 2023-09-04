@@ -37,7 +37,13 @@ def benchmarking(func):
         fc_layers = [layer for layer in layers if isinstance(layer, nn.Linear)]
         FLOPs = 0
         for _, fc_layer in enumerate(fc_layers):
-            FLOPs += 2 * fc_layer.in_features * fc_layer.out_features
+            if fc_layer.bias is None:
+                MAC = 2 * fc_layer.in_features * fc_layer.out_features # Multiply-Accumulate (*2 b/c Muliplication & Addition to Accumulator)
+                FLOPs += MAC
+            else:
+                MAC = 2 * fc_layer.in_features * fc_layer.out_features # Multiply-Accumulate (*2 b/c Muliplication & Addition to Accumulator)
+                ADD = fc_layer.out_features # Additions
+                FLOPs += MAC + ADD
         print(f"The total FLOPs of {len(fc_layers)} linear layers in {model.__class__.__name__}: {FLOPs:,}")
 
         # COUNT TRAINING TIME
