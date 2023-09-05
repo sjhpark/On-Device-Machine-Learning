@@ -52,7 +52,8 @@ if __name__ == '__main__':
         train_dataloader=lang_train_dataloader, 
         dev_dataloader=lang_dev_dataloader, 
         device=device,
-        eval = args.eval)
+        eval = args.eval,
+        warmup_itr=100)
 
     elif args.dataset == 'MNIST':
         vision_train_labels, vision_test_labels = MNISTDataProcessor().labels()
@@ -74,4 +75,5 @@ if __name__ == '__main__':
         train_dataloader=vision_train_dataloader, 
         dev_dataloader=vision_test_dataloader, 
         device=device,
-        eval = args.eval)
+        eval = args.eval,
+        warmup_itr=100)

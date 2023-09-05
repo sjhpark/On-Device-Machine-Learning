@@ -58,9 +58,10 @@ def benchmarking(func):
 
         # COUNT TRAINING TIME
         begin = time.time()
-        func(*args, **kwargs)
+        dummy_time = func(*args, **kwargs)
         end = time.time()
-        print(f"Time taken for running {func.__name__}: {(end - begin):.3f}s")
+        print(f"Dummy times that have been excluded from {func.__name__}: {dummy_time}")
+        print(f"Total time taken for running {func.__name__}: {(end - begin) - sum(dummy_time.values()):.3f}s")
     return wrapper
 
 def computer_inference_latency_GPU(model, dummy_features, device, iterations=100):
@@ -73,7 +74,7 @@ def computer_inference_latency_GPU(model, dummy_features, device, iterations=100
     print("Warming up...")
     for _ in range(iterations//10):
         _ = model(dummy_features)
-    print ("Warming up complete")
+    print ("Warming up complete.")
     
     with torch.no_grad():
         for itr in range(iterations):
@@ -88,7 +89,10 @@ def computer_inference_latency_GPU(model, dummy_features, device, iterations=100
     print(f"Mean inference time: {mean_time:.3f}ms")
 
 @benchmarking
-def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader, device, eval):
+def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader, device, eval, warmup_itr=100):
+    assert warmup_itr >= 100 and warmup_itr <= 1000, "Iterations should be greater than 100 and less than 1000."
+    dummy_time = {}
+
     for epoch in range(epochs):
         inputs_count = 0
         total_time = 0.0 # total inference time
@@ -102,6 +106,15 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
             batch_size = features.shape[0]
             # ZERO OUT THE GRADIENTS
             optimizer.zero_grad()
+            # --Warm-up--
+            being_warmup = time.time()
+            if epoch == 0 and i == 0:
+                print("Warm-up begins...")
+                for _ in range(warmup_itr):
+                    _ = model(features)
+                end_warmup = time.time()
+                dummy_time['warmup'] = (end_warmup - being_warmup)
+                print("Warm-up complete!")
             # --INFERENCE TIME BEGINS--
             begin = time.time()
             # FORWARD PASS
@@ -124,7 +137,9 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
         print(f"Mean inference time per input data for epoch {epoch}: {mean_time:.6f}ms")
 
         # ACCURACY COMPUTATION PER EPOCH
+        eval_time = 0.0
         if eval:
+            eval_begin = time.time()
             print("Evaluating...")
             model.eval()
             with torch.no_grad():
@@ -149,3 +164,8 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
                 dev_acc = dev_correct / len(dev_dataloader.dataset) * 100
             # PRINT STATISTICS
             print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Eval Accuracy: {dev_acc:.3f}%")
+            eval_end = time.time()
+            eval_time += (eval_end - eval_begin)
+    
+    dummy_time['eval'] = eval_time
+    return dummy_time
