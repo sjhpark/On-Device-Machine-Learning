@@ -91,6 +91,7 @@ def computer_inference_latency_GPU(model, dummy_features, device, iterations=100
 @benchmarking
 def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader, device, eval, warmup_itr=100):
     assert warmup_itr >= 100 and warmup_itr <= 1000, "Iterations should be greater than 100 and less than 1000."
+    eval_time = 0.0
     dummy_time = {}
 
     for epoch in range(epochs):
@@ -106,14 +107,14 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
             batch_size = features.shape[0]
             # ZERO OUT THE GRADIENTS
             optimizer.zero_grad()
-            # --Warm-up--
-            being_warmup = time.time()
+            # --WARM UP--
+            begin_warmup = time.time()
             if epoch == 0 and i == 0:
                 print("Warm-up begins...")
                 for _ in range(warmup_itr):
                     _ = model(features)
                 end_warmup = time.time()
-                dummy_time['warmup'] = (end_warmup - being_warmup)
+                dummy_time['warmup'] = (end_warmup - begin_warmup)
                 print("Warm-up complete!")
             # --INFERENCE TIME BEGINS--
             begin = time.time()
@@ -137,7 +138,6 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
         print(f"Mean inference time per input data for epoch {epoch}: {mean_time:.6f}ms")
 
         # ACCURACY COMPUTATION PER EPOCH
-        eval_time = 0.0
         if eval:
             eval_begin = time.time()
             print("Evaluating...")
