@@ -106,7 +106,6 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
             features, labels = input_batch
             features = features.to(device)
             labels = labels.to(device)
-            batch_size = features.shape[0]
             # ZERO OUT THE GRADIENTS
             optimizer.zero_grad()
             # FORWARD PASS
