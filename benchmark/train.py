@@ -14,7 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('--hidden_dim', type=int, default={"MNIST": 1024, "SST": 256}, help='hidden dimension')
     parser.add_argument('--out_dim', type=int, default={"MNIST": 10, "SST": 2} , help='output dimension')
     parser.add_argument('--bias', action='store_true', help='bias') # True if called, else False
-    parser.add_argument('--eval', action='store_true', help='evaluate the model') # True if called, else False
+    parser.add_argument('--val', action='store_true', help='validate the model') # True if called, else False
     args = parser.parse_args()
     
     # config
@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     # flags
     print(f"Bias: {args.bias}")
-    print(f"Evaluation mode: {args.eval}")
+    print(f"Validation mode: {args.val}")
 
      # criterion (loss function)
     criterion = nn.CrossEntropyLoss()
@@ -50,10 +50,10 @@ if __name__ == '__main__':
         optimizer=optimizer, 
         epochs=args.epochs,
         train_dataloader=lang_train_dataloader, 
-        dev_dataloader=lang_dev_dataloader, 
+        val_dataloader=lang_dev_dataloader,
+        test_dataset = lang_dev_dataset,
         device=device,
-        eval = args.eval,
-        warmup_itr=100)
+        val = args.val)
 
     elif args.dataset == 'MNIST':
         vision_train_labels, vision_test_labels = MNISTDataProcessor().labels()
@@ -73,7 +73,7 @@ if __name__ == '__main__':
         optimizer=optimizer, 
         epochs=args.epochs,
         train_dataloader=vision_train_dataloader, 
-        dev_dataloader=vision_test_dataloader, 
+        val_dataloader=vision_test_dataloader,
+        test_dataset = vision_test_dataset,
         device=device,
-        eval = args.eval,
-        warmup_itr=100)
+        val = args.val)

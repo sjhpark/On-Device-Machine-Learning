@@ -5,6 +5,7 @@ from tqdm import tqdm
 import time
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 
 def load_yaml(filename):
     # LOAD YAML FILE
@@ -34,9 +35,33 @@ def print_params_layer(layer: nn.Module, parmas_dict: dict) -> None:
     elif isinstance(layer, nn.Linear) and layer.bias is not None:
         print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} + {layer.out_features} = {parmas_dict[layer.__class__.__name__]:,}")
 
+def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
+    print(f"Measuring inference latency of trained {model.__class__.__name__} on CPU...")
+    test_dataloader =  DataLoader(test_dataset, batch_size=1, shuffle=False)
+    with torch.no_grad():
+        inference_latency = 0
+        for i, data in tqdm(enumerate(test_dataloader)):
+            features, _ = data
+            features = features.to(device)
+            # WARM_UP
+            if i == 0:
+                print("Warm-up begins...")
+                for _ in range(warmup_itr):
+                    _ = model(features)
+                print("Warm-up complete!")
+            # MEASURE INFERENCE LATENCY    
+            begin = time.time()
+            _ = model(features)
+            end = time.time()
+            inference_latency += (end - begin)
+    mean_inference_latency = inference_latency / len(test_dataloader) * 1000
+    print(f"Mean inference latency: {mean_inference_latency:.3f}ms")
+
 def benchmarking(func):
     def wrapper(*args, **kwargs):
-        model = kwargs['model']
+        device = kwargs['device']
+        model = kwargs['model'].to(device)
+        test_dataset = kwargs['test_dataset']
         layers = get_layers(model)
 
         # COUNT THE NUMBER OF PARAMETERS
@@ -56,96 +81,54 @@ def benchmarking(func):
             FLOPs += 2 * MAC # 1 FLOP ~= 2 MAC for FMA
         print(f"The total FLOPs in {model.__class__.__name__}: {FLOPs/1e9:.6f} GFLOPs")
 
-        # COUNT TRAINING TIME
+        # COUNT INFERENCE LATENCY
+        warmup_itr = 100
+        measure_inference_latency_CPU(model, test_dataset, device, warmup_itr)
+
+        # COUNT TOTAL TRAINING TIME
         begin = time.time()
         dummy_time = func(*args, **kwargs)
         end = time.time()
-        print(f"Dummy times that have been excluded from {func.__name__}: {dummy_time}")
-        print(f"Total time taken for running {func.__name__}: {(end - begin) - sum(dummy_time.values()):.3f}s")
+        print(f"Total training time: {(end - begin) - sum(dummy_time.values()):.3f}s")
+        print(f"Dummy times that have been excluded from training: {dummy_time}")
     return wrapper
 
-def computer_inference_latency_GPU(model, dummy_features, device, iterations=100):
-    assert device == torch.device("cuda"), "This method is valid only for GPU as your device."
-    assert iterations >= 100 and iterations <= 1000, "Iterations should be greater than 100 and less than 1000."
-    begin, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    time_array = np.zeros((iterations, 1)) # preallocate an array of size of iterations
-
-    # WARM-UP
-    print("Warming up...")
-    for _ in range(iterations//10):
-        _ = model(dummy_features)
-    print ("Warming up complete.")
-    
-    with torch.no_grad():
-        for itr in range(iterations):
-            begin.record()
-            _ = model(dummy_features)
-            end.record()
-            torch.cuda.synchronize()
-            time = begin.elapsed_time(end)
-            time_array[itr] = time # store the time
-
-    mean_time = np.sum(time_array) / iterations # mean inference time
-    print(f"Mean inference time: {mean_time:.3f}ms")
-
 @benchmarking
-def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader, device, eval, warmup_itr=100):
-    assert warmup_itr >= 100 and warmup_itr <= 1000, "Iterations should be greater than 100 and less than 1000."
-    eval_time = 0.0
+def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, test_dataset, device, val):
+    val_time = 0.0
     dummy_time = {}
 
     for epoch in range(epochs):
-        inputs_count = 0
-        total_time = 0.0 # total inference time
         # TRAIN
         model.train()
-        for i, data in tqdm(enumerate(train_dataloader)):
+        for i, input_batch in tqdm(enumerate(train_dataloader)):
             # INPUT BATCH: FEATURES and LABELS
-            features, labels = data
+            features, labels = input_batch
             features = features.to(device)
             labels = labels.to(device)
             batch_size = features.shape[0]
             # ZERO OUT THE GRADIENTS
             optimizer.zero_grad()
-            # --WARM UP--
-            begin_warmup = time.time()
-            if epoch == 0 and i == 0:
-                print("Warm-up begins...")
-                for _ in range(warmup_itr):
-                    _ = model(features)
-                end_warmup = time.time()
-                dummy_time['warmup'] = (end_warmup - begin_warmup)
-                print("Warm-up complete!")
-            # --INFERENCE TIME BEGINS--
-            begin = time.time()
             # FORWARD PASS
             outputs = model(features)
             # --INFERENCE TIME ENDS--
             end = time.time()
-            # --COMPUTE BATCH INFERENCE TIME--
-            batch_time = end - begin
-            total_time += batch_time
-            inputs_count += batch_size
             # LOSS COMPUTATION
             loss = criterion(outputs, labels)
             # BACKWARD PASS
             loss.backward()
             # WEIGHTS UPDATE
             optimizer.step()
-        
-        # MEAN INFERENCE TIME PER INPUT DATA PER EPOCH
-        mean_time = total_time / inputs_count * 1000 # in [ms]
-        print(f"Mean inference time per input data for epoch {epoch}: {mean_time:.6f}ms")
 
-        # ACCURACY COMPUTATION PER EPOCH
-        if eval:
-            eval_begin = time.time()
-            print("Evaluating...")
+        # ACCURACY COMPUTATION
+        if val:
+            val_begin = time.time()
+            print("Validating...")
             model.eval()
             with torch.no_grad():
                 train_correct = 0
-                for data in train_dataloader:
-                    features, labels = data
+                for input_batch in train_dataloader:
+                    features, labels = input_batch
                     features = features.to(device)
                     labels = labels.to(device)
                     outputs = model(features)
@@ -154,18 +137,18 @@ def train(model, criterion, optimizer, epochs, train_dataloader, dev_dataloader,
                     train_acc = train_correct / len(train_dataloader.dataset) * 100
                 # EVAL
                 dev_correct = 0
-                for data in dev_dataloader:
-                    features, labels = data
+                for input_batch in val_dataloader:
+                    features, labels = input_batch
                     features = features.to(device)
                     labels = labels.to(device)
                     outputs = model(features)
                     _, predicted = torch.max(outputs.data, dim=1)
                     dev_correct += (predicted == labels).sum().item()
-                dev_acc = dev_correct / len(dev_dataloader.dataset) * 100
+                dev_acc = dev_correct / len(val_dataloader.dataset) * 100
             # PRINT STATISTICS
-            print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Eval Accuracy: {dev_acc:.3f}%")
-            eval_end = time.time()
-            eval_time += (eval_end - eval_begin)
+            print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Val Accuracy: {dev_acc:.3f}%")
+            val_end = time.time()
+            val_time += (val_end - val_begin)
     
-    dummy_time['eval'] = eval_time
+    dummy_time['val'] = val_time
     return dummy_time
