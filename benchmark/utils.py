@@ -25,20 +25,29 @@ def get_layers(model):
             layers.append(module)
     return layers
 
+def print_params_layer(layer: nn.Module, parmas_dict: dict) -> None:
+    # TODO print the number of params in other types of layers (e.g., Conv2d)
+    if isinstance(layer, nn.Linear) == False:
+        print(f"\t{layer.__class__.__name__}: = {parmas_dict[layer.__class__.__name__]:,}")
+    elif isinstance(layer, nn.Linear) and layer.bias is None:
+        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} = {parmas_dict[layer.__class__.__name__]:,}")
+    elif isinstance(layer, nn.Linear) and layer.bias is not None:
+        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} + {layer.out_features} = {parmas_dict[layer.__class__.__name__]:,}")
+
 def benchmarking(func):
     def wrapper(*args, **kwargs):
         model = kwargs['model']
         layers = get_layers(model)
 
         # COUNT THE NUMBER OF PARAMETERS
-        num_params = sum(params.numel() for params in model.parameters())
-        print(f"The total number of parameters in {model.__class__.__name__}: {num_params:,}")
         parmas_dict = {}
         print(f"The number of parameters in each layer of {model.__class__.__name__}:")
         for layer in layers:
             parmas_dict[layer.__class__.__name__] = sum(params.numel() for params in layer.parameters())
-            print(f"\t{layer.__class__.__name__}: {parmas_dict[layer.__class__.__name__]:,}")
-
+            print_params_layer(layer, parmas_dict)
+        num_params = sum(params.numel() for params in model.parameters())
+        print(f"The total number of parameters in {model.__class__.__name__}: {num_params:,}")
+        
         # COUNT FLOPs OF LINEAR LAYERS
         fc_layers = [layer for layer in layers if isinstance(layer, nn.Linear)]
         FLOPs = 0
@@ -50,7 +59,7 @@ def benchmarking(func):
                 MAC = 2 * fc_layer.in_features * fc_layer.out_features # Multiply-Accumulate (*2 b/c Muliplication & Addition to Accumulator)
                 ADD = fc_layer.out_features # Additions
                 FLOPs += MAC + ADD
-        print(f"The total FLOPs of the {len(fc_layers)} linear layers in {model.__class__.__name__}: {FLOPs:,}")
+        print(f"The total FLOPs in {model.__class__.__name__}: {FLOPs:,}")
 
         # COUNT TRAINING TIME
         begin = time.time()

@@ -16,7 +16,7 @@ if __name__ == '__main__':
     parser.add_argument('--bias', action='store_true', help='bias') # True if called, else False
     parser.add_argument('--eval', action='store_true', help='evaluate the model') # True if called, else False
     args = parser.parse_args()
-
+    
     # config
     config = load_yaml('config')
 
