@@ -2,6 +2,7 @@ import yaml
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 import time
 import torch
 import torch.nn as nn
@@ -39,7 +40,7 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
     print(f"Measuring inference latency of trained {model.__class__.__name__} on CPU...")
     test_dataloader =  DataLoader(test_dataset, batch_size=1, shuffle=False)
     with torch.no_grad():
-        inference_latency = 0
+        inference_latency = []
         for i, data in tqdm(enumerate(test_dataloader)):
             features, _ = data
             features = features.to(device)
@@ -53,9 +54,17 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
             begin = time.time()
             _ = model(features)
             end = time.time()
-            inference_latency += (end - begin)
-    mean_inference_latency = inference_latency / len(test_dataloader) * 1000
+            inference_latency.append(end - begin)
+    mean_inference_latency = sum(inference_latency) / len(test_dataloader) * 1000
     print(f"Mean inference latency: {mean_inference_latency:.3f}ms")
+    # plot inference latency over iterations and save it as a figure
+    plt.figure(figsize=(12, 8))
+    plt.plot(inference_latency)
+    plt.scatter(range(len(inference_latency)), inference_latency, s=10, c='r')
+    plt.title(f"Inference Latency vs. Iterations in Test Loop\nMean inference latency: {mean_inference_latency:.3f}ms")
+    plt.xlabel("Iteration")
+    plt.ylabel("Inference latency [s]")
+    plt.savefig(f"out/{model.__class__.__name__}_inference_latency.png")
 
 def benchmarking(func):
     def wrapper(*args, **kwargs):
