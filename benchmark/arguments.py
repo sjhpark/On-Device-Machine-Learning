@@ -13,8 +13,4 @@ def arguments():
     parser.add_argument('--val', action='store_true', help='validate the model') # True if called, else False
     args = parser.parse_args()
     args_dict = vars(args)
-
     return args_dict
-
-if __name__ == "__main__":
-    arguments()
