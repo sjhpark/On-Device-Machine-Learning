@@ -86,7 +86,7 @@ def benchmarking(func):
         fc_layers = [layer for layer in layers if isinstance(layer, nn.Linear)]
         FLOPs = 0
         for _, fc_layer in enumerate(fc_layers):
-            MAC = fc_layer.in_features * fc_layer.out_features # Multiply-Accumulate (*2 b/c Muliplication & Addition to Accumulator)
+            MAC = fc_layer.in_features * fc_layer.out_features # Multiply-Accumulate
             FLOPs += 2 * MAC # 1 FLOP ~= 2 MAC for FMA
         print(f"The total FLOPs in {model.__class__.__name__}: {FLOPs/1e9:.6f} GFLOPs")
 

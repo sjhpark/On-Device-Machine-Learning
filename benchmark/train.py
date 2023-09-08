@@ -1,21 +1,10 @@
 from utils import *
 from data_processing import *
 from models import *
-import argparse
+from arguments import arguments
 import torch
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='MNIST', help='dataset type (MNIST or SST)')
-    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
-    parser.add_argument('--num_hidden', type=int, default=2, help='number of hidden layers')
-    parser.add_argument('--epochs', type=int, default=2, help='number of epochs')
-    parser.add_argument('--hidden_dim', type=int, default={"MNIST": 1024, "SST": 256}, help='hidden dimension')
-    parser.add_argument('--out_dim', type=int, default={"MNIST": 10, "SST": 2} , help='output dimension')
-    parser.add_argument('--bias', action='store_true', help='bias') # True if called, else False
-    parser.add_argument('--val', action='store_true', help='validate the model') # True if called, else False
-    args = parser.parse_args()
+def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, bias, val):
     
     # config
     config = load_yaml('config')
@@ -25,55 +14,58 @@ if __name__ == '__main__':
     print(f"Device: {device}")
 
     # flags
-    print(f"Bias: {args.bias}")
-    print(f"Validation mode: {args.val}")
+    print(f"Bias: {bias}")
+    print(f"Validation mode: {val}")
 
      # criterion (loss function)
     criterion = nn.CrossEntropyLoss()
     print(f"Loss function: {criterion.__class__.__name__}")
 
-    if args.dataset == 'SST':
+    if dataset == 'SST':
         lang_train_labels, lang_dev_labels = SSTDataProcessor().labels()
         lang_train_features, lang_dev_features = SSTDataProcessor().features()
         input_dim = len(lang_train_features[0])
-        model = FFNN(input_dim, args.hidden_dim['SST'], args.out_dim['SST'], args.num_hidden, args.bias).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        model = FFNN(input_dim, hidden_dim['SST'], out_dim['SST'], num_hidden, bias).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         
         lang_train_dataset = Lang_Dataset(lang_train_features, lang_train_labels)
-        lang_train_dataloader = DataLoader(lang_train_dataset, batch_size=args.batch_size, shuffle=True)
+        lang_train_dataloader = DataLoader(lang_train_dataset, batch_size=batch_size, shuffle=True)
 
         lang_dev_dataset = Lang_Dataset(lang_dev_features, lang_dev_labels)
-        lang_dev_dataloader = DataLoader(lang_dev_dataset, batch_size=args.batch_size, shuffle=True)
+        lang_dev_dataloader = DataLoader(lang_dev_dataset, batch_size=batch_size, shuffle=True)
 
         train(model=model, 
-        criterion=criterion, 
+        criterion=criterion,
         optimizer=optimizer, 
-        epochs=args.epochs,
+        epochs=epochs,
         train_dataloader=lang_train_dataloader, 
         val_dataloader=lang_dev_dataloader,
         test_dataset = lang_dev_dataset,
         device=device,
-        val = args.val)
+        val = val)
 
-    elif args.dataset == 'MNIST':
+    elif dataset == 'MNIST':
         vision_train_labels, vision_test_labels = MNISTDataProcessor().labels()
         vision_train_features, vision_test_features = MNISTDataProcessor().features()
         input_dim = len(vision_train_features[0])
-        model = FFNN(input_dim, args.hidden_dim['MNIST'], args.out_dim['MNIST'], args.num_hidden, args.bias).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+        model = FFNN(input_dim, hidden_dim['MNIST'], out_dim['MNIST'], num_hidden, bias).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
         vision_train_dataset = Vision_Dataset(vision_train_features, vision_train_labels)
-        vision_train_dataloader = DataLoader(vision_train_dataset, batch_size=args.batch_size, shuffle=True)
+        vision_train_dataloader = DataLoader(vision_train_dataset, batch_size=batch_size, shuffle=True)
 
         vision_test_dataset = Vision_Dataset(vision_test_features, vision_test_labels)
-        vision_test_dataloader = DataLoader(vision_test_dataset, batch_size=args.batch_size, shuffle=True)
+        vision_test_dataloader = DataLoader(vision_test_dataset, batch_size=batch_size, shuffle=True)
 
         train(model=model, 
         criterion=criterion, 
         optimizer=optimizer, 
-        epochs=args.epochs,
+        epochs=epochs,
         train_dataloader=vision_train_dataloader, 
         val_dataloader=vision_test_dataloader,
         test_dataset = vision_test_dataset,
         device=device,
-        val = args.val)
+        val = val)
+
+if __name__ == '__main__':
+    main(**arguments())
