@@ -130,8 +130,8 @@ class MNISTDataProcessor:
     def __init__(self):
         self.vision_dir = config['paths']['MNIST_data_dir']
 
-        self.transform_type = "Crop"
-        self.resize_ratio = 2
+        self.transform_type = "Resize and Crop"
+        self.resize_ratio = 1 # the number to divide the original image size by
 
         self.vision_train = self.train_file()
         self.vision_test = self.test_file()
@@ -143,27 +143,33 @@ class MNISTDataProcessor:
         new_image_size = int((image_size[0]**0.5)//resize_ratio)
         
         if transform_type == 'Resize':
-            resize = transforms.Resize((new_image_size, new_image_size), antialias=True)
+            transform = transforms.Resize((new_image_size, new_image_size), antialias=True)
             print(f"Resizing test images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
         elif transform_type == "Crop":
-            resize = transforms.CenterCrop((new_image_size, new_image_size))
+            transform = transforms.CenterCrop((new_image_size, new_image_size))
             print(f"Cropping images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
+        elif transform_type == "Resize and Crop":
+            transform = transforms.Compose([
+                                        transforms.Resize((new_image_size, new_image_size), antialias=True),
+                                        transforms.CenterCrop((new_image_size, new_image_size))
+                                        ])
         
-        image1D_resized_list = []
+        image1D_transformed_list = []
         for i in range(len(dataset)):
             image2D = np.reshape(dataset.iloc[:,1:].values[i], original_shape)
             image2D = torch.tensor(image2D, dtype=torch.float32)
-            image2D_resized = resize(image2D)
-            image1D_resized = torch.reshape(image2D_resized, (-1,))
-            image1D_resized_list.append(image1D_resized)
-        # drop original images and add resized images
+            image2D_transformed = transform(image2D)
+            image2D_transformed
+            image1D_transformed = torch.reshape(image2D_transformed, (-1,))
+            image1D_transformed_list.append(image1D_transformed)
+        # drop original images and add transformed images
         dataset.drop(dataset.columns[1:], axis=1, inplace=True)
-        # Convert image1D_resized_list to a numpy array
-        resized_images_array = np.array([tensor.numpy() for tensor in image1D_resized_list])
+        # Convert a list to a numpy array
+        transform_images_array = np.array([tensor.numpy() for tensor in image1D_transformed_list])
         # Create a DataFrame from the numpy array
-        resized_images_df = pd.DataFrame(resized_images_array)
+        transform_images_df = pd.DataFrame(transform_images_array)
         # Concatenate the DataFrames
-        dataset = pd.concat([dataset, resized_images_df], axis=1)
+        dataset = pd.concat([dataset, transform_images_df], axis=1)
         print("new image size: ", dataset.iloc[:, 1:].values[0].shape)
 
         return dataset
@@ -172,7 +178,7 @@ class MNISTDataProcessor:
         vision_train = pd.read_csv(os.path.join(self.vision_dir, 'mnist_train.csv'), header=None)
         vision_train.rename(columns={0: "labels"}, inplace=True)
         
-        vision_train = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_train)
+        # vision_train = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_train)
 
         return vision_train
     
@@ -180,7 +186,7 @@ class MNISTDataProcessor:
         vision_test = pd.read_csv(os.path.join(self.vision_dir, 'mnist_test.csv'), header=None)
         vision_test.rename(columns={0: "labels"}, inplace=True)
         
-        vision_test = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_test)
+        # vision_test = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_test)
 
         return vision_test
     
