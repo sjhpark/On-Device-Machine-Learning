@@ -11,6 +11,7 @@ from utils import *
 import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
 
 import torchtext
 from torchtext.data import get_tokenizer
@@ -128,17 +129,59 @@ class Lang_Dataset(Dataset):
 class MNISTDataProcessor:
     def __init__(self):
         self.vision_dir = config['paths']['MNIST_data_dir']
+
+        self.transform_type = "Crop"
+        self.resize_ratio = 2
+
         self.vision_train = self.train_file()
         self.vision_test = self.test_file()
+
+    def transform(self, transform_type, resize_ratio, dataset):
+        # Resize images (by Resize or CenterCrop)
+        image_size = dataset.iloc[:, 1:].values[0].shape
+        original_shape = (1, int(image_size[0]**0.5), int(image_size[0]**0.5))
+        new_image_size = int((image_size[0]**0.5)//resize_ratio)
+        
+        if transform_type == 'Resize':
+            resize = transforms.Resize((new_image_size, new_image_size), antialias=True)
+            print(f"Resizing test images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
+        elif transform_type == "Crop":
+            resize = transforms.CenterCrop((new_image_size, new_image_size))
+            print(f"Cropping images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
+        
+        image1D_resized_list = []
+        for i in range(len(dataset)):
+            image2D = np.reshape(dataset.iloc[:,1:].values[i], original_shape)
+            image2D = torch.tensor(image2D, dtype=torch.float32)
+            image2D_resized = resize(image2D)
+            image1D_resized = torch.reshape(image2D_resized, (-1,))
+            image1D_resized_list.append(image1D_resized)
+        # drop original images and add resized images
+        dataset.drop(dataset.columns[1:], axis=1, inplace=True)
+        # Convert image1D_resized_list to a numpy array
+        resized_images_array = np.array([tensor.numpy() for tensor in image1D_resized_list])
+        # Create a DataFrame from the numpy array
+        resized_images_df = pd.DataFrame(resized_images_array)
+        # Concatenate the DataFrames
+        dataset = pd.concat([dataset, resized_images_df], axis=1)
+        print("new image size: ", dataset.iloc[:, 1:].values[0].shape)
+
+        return dataset
     
     def train_file(self):
         vision_train = pd.read_csv(os.path.join(self.vision_dir, 'mnist_train.csv'), header=None)
         vision_train.rename(columns={0: "labels"}, inplace=True)
+        
+        vision_train = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_train)
+
         return vision_train
     
     def test_file(self):
         vision_test = pd.read_csv(os.path.join(self.vision_dir, 'mnist_test.csv'), header=None)
         vision_test.rename(columns={0: "labels"}, inplace=True)
+        
+        vision_test = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_test)
+
         return vision_test
     
     def labels(self):
