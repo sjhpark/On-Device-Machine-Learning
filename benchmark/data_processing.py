@@ -7,6 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from utils import *
+from arguments import arguments
 
 import torch
 from torchvision.transforms import ToTensor
@@ -130,7 +131,8 @@ class MNISTDataProcessor:
     def __init__(self):
         self.vision_dir = config['paths']['MNIST_data_dir']
 
-        self.transform_type = "Resize and Crop"
+        self.transform_flag = "True"
+        self.transform_type = "Resize"
         self.resize_ratio = 1 # the number to divide the original image size by
 
         self.vision_train = self.train_file()
@@ -143,16 +145,11 @@ class MNISTDataProcessor:
         new_image_size = int((image_size[0]**0.5)//resize_ratio)
         
         if transform_type == 'Resize':
-            transform = transforms.Resize((new_image_size, new_image_size), antialias=True)
             print(f"Resizing test images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
+            transform = transforms.Resize((new_image_size, new_image_size), antialias=True)
         elif transform_type == "Crop":
-            transform = transforms.CenterCrop((new_image_size, new_image_size))
             print(f"Cropping images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
-        elif transform_type == "Resize and Crop":
-            transform = transforms.Compose([
-                                        transforms.Resize((new_image_size, new_image_size), antialias=True),
-                                        transforms.CenterCrop((new_image_size, new_image_size))
-                                        ])
+            transform = transforms.CenterCrop((new_image_size, new_image_size))
         
         image1D_transformed_list = []
         for i in range(len(dataset)):
@@ -178,7 +175,8 @@ class MNISTDataProcessor:
         vision_train = pd.read_csv(os.path.join(self.vision_dir, 'mnist_train.csv'), header=None)
         vision_train.rename(columns={0: "labels"}, inplace=True)
         
-        # vision_train = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_train)
+        if self.transform_flag == "True":
+            vision_train = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_train)
 
         return vision_train
     
@@ -186,7 +184,8 @@ class MNISTDataProcessor:
         vision_test = pd.read_csv(os.path.join(self.vision_dir, 'mnist_test.csv'), header=None)
         vision_test.rename(columns={0: "labels"}, inplace=True)
         
-        # vision_test = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_test)
+        if self.transform_flag == "True":
+            vision_test = self.transform(transform_type=self.transform_type, resize_ratio=self.resize_ratio, dataset=vision_test)
 
         return vision_test
     

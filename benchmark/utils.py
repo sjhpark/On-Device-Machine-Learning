@@ -119,8 +119,6 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
             optimizer.zero_grad()
             # FORWARD PASS
             outputs = model(features)
-            # --INFERENCE TIME ENDS--
-            end = time.time()
             # LOSS COMPUTATION
             loss = criterion(outputs, labels)
             # BACKWARD PASS
@@ -134,6 +132,7 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
             print("Validating...")
             model.eval()
             with torch.no_grad():
+                # COMPUTE TRAINING ACCURACY
                 train_correct = 0
                 for input_batch in train_dataloader:
                     features, labels = input_batch
@@ -143,7 +142,7 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                     _, predicted = torch.max(outputs.data, dim=1)
                     train_correct += (predicted == labels).sum().item()
                     train_acc = train_correct / len(train_dataloader.dataset) * 100
-                # EVAL
+                # COMPUTE VALIDATION ACCURACY
                 dev_correct = 0
                 for input_batch in val_dataloader:
                     features, labels = input_batch
