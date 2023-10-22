@@ -46,16 +46,10 @@ class Quantize:
         s = (x_max - x_min) / (q_max - q_min)
 
         # zero point
-        if self.q_flag == "unsigned":
-            if torch.round(x_min / s) == q_min and torch.round(x_max / s) == q_max:
-                z = 0
-            else:
-                z = -torch.round(x_min / s)
-        elif self.q_flag == "signed":
-            if torch.round(x_min / s) == q_min and torch.round(x_max / s) == q_max:
-                z = 0
-            else:
-                z = -torch.round(x_min / s) + q_min
+        if torch.round(x_min / s) == q_min:
+            z = 0
+        else:
+            z = -torch.round(x_min / s) + q_min
 
         self.tensor = torch.round(self.tensor/s) + z
         self.tensor = torch.clamp(self.tensor, q_min, q_max)
