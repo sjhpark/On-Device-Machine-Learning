@@ -8,7 +8,7 @@ class Quantize:
             x_tensor: input tensor
             y_type: 'int2', 'uint8', 'uint16', 'uint32', 'uint64', 'int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'float64'
         '''
-        assert q_flag in ["signed", "unsigned"], "target flag must be 'signed' or 'unsigned'"
+        assert q_flag in ["signed", "unsigned"], "linear mapping target flag must be 'signed' or 'unsigned'"
         self.q_flag = q_flag # "signed" or "unsigned"
 
         if self.q_flag == "unsigned":
@@ -18,9 +18,6 @@ class Quantize:
                         'uint16': (0, 65535),
                         'uint32': (0, 4294967295),
                         'uint64': (0, 18446744073709551615),
-                        'float16': (-65504, 65504),
-                        'float32': (-3.4028235e+38, 3.4028235e+38),
-                        'float64': (-1.7976931348623157e+308, 1.7976931348623157e+308)
                         }
         elif self.q_flag == "signed":   
             self.range_dict = {
@@ -29,29 +26,43 @@ class Quantize:
                         'int16': (-32768, 32767),
                         'int32': (-2147483648, 2147483647),
                         'int64': (-9223372036854775808, 9223372036854775807),
-                        'float16': (-65504, 65504),
-                        'float32': (-3.4028235e+38, 3.4028235e+38),
-                        'float64': (-1.7976931348623157e+308, 1.7976931348623157e+308)
                         }
 
-        self.tensor = x_tensor.clone()
-        self.y_type = y_type
+        self.tensor = x_tensor # input tensor
+        self.y_type = y_type # target type
         
-    
-    def run(self):
-        q_min, q_max = self.range_dict[self.y_type]
-        x_min, x_max = torch.min(self.tensor), torch.max(self.tensor)
+        self.q_min, self.q_max = self.range_dict[self.y_type]
+        self.x_min, self.x_max = torch.min(self.tensor), torch.max(self.tensor)
 
         # scale factor
-        s = (x_max - x_min) / (q_max - q_min)
+        self.s = (self.x_max - self.x_min) / (self.q_max - self.q_min)
 
         # zero point
-        if torch.round(x_min / s) == q_min:
-            z = 0
+        if torch.round(self.x_min / self.s) == self.q_min:
+            self.z = 0
         else:
-            z = -torch.round(x_min / s) + q_min
+            self.z = -torch.round(self.x_min / self.s) + self.q_min
+    
+    def linear_mapping(self):
+        '''
+        Quantization
+        '''
+        tensor = torch.round(self.tensor/self.s + self.z)
+        tensor = torch.clamp(tensor, self.q_min, self.q_max)
+        return tensor # quantized tensor
 
-        self.tensor = torch.round(self.tensor/s) + z
-        self.tensor = torch.clamp(self.tensor, q_min, q_max)
-
-        return self.tensor
+    def inverse_mapping(self):
+        '''
+        Dequantization
+        '''
+        tensor = self.linear_mapping()
+        tensor = (tensor - self.z) * self.s
+        return tensor # dequantized tensor
+    
+    def error(self):
+        '''
+        Quantization Error
+        '''
+        tensor = self.inverse_mapping()
+        tensor = torch.abs(self.tensor - tensor)
+        return tensor
