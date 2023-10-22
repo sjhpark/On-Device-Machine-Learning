@@ -3,6 +3,11 @@ import torch
 class Quantize:
     def __init__(self, x_tensor:torch.Tensor, y_type:str, q_flag:str="unsigned"):
         '''
+        Features:
+            Quantization 
+                from float to int
+            Dequantization
+                from int to float
         Input Args:
             q_flag: target (quantized) domain - 'signed' or 'unsigned'
             x_tensor: input tensor
@@ -33,20 +38,24 @@ class Quantize:
         
         self.q_min, self.q_max = self.range_dict[self.y_type]
         self.x_min, self.x_max = torch.min(self.tensor), torch.max(self.tensor)
-
+    
+    def scale_and_zero_point(self, x_min:float, x_max:float, q_min, q_max):
         # scale factor
-        self.s = (self.x_max - self.x_min) / (self.q_max - self.q_min)
+        s = (x_max - x_min) / (q_max - q_min)
 
         # zero point
-        if torch.round(self.x_min / self.s) == self.q_min:
-            self.z = 0
+        if torch.round(x_min / s) == q_min:
+            z = 0
         else:
-            self.z = -torch.round(self.x_min / self.s) + self.q_min
+            z = -torch.round(x_min / s) + q_min
+        
+        return s, z
     
     def linear_mapping(self):
         '''
         Quantization
         '''
+        self.s, self.z = self.scale_and_zero_point(self.x_min, self.x_max, self.q_min, self.q_max)
         tensor = torch.round(self.tensor/self.s + self.z)
         tensor = torch.clamp(tensor, self.q_min, self.q_max)
         return tensor # quantized tensor
