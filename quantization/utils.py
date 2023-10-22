@@ -39,7 +39,10 @@ def print_params_layer(layer: nn.Module, parmas_dict: dict) -> None:
         print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} + {layer.out_features} = {parmas_dict[layer.__class__.__name__]:,}")
 
 def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
-    print(f"Measuring inference latency of trained {model.__class__.__name__} on CPU...")
+    config = load_yaml('config')
+    device = config['device']
+    device = torch.device(device)
+    print(f"Measuring inference latency of trained {model.__class__.__name__} on {device}...")
     test_dataloader =  DataLoader(test_dataset, batch_size=1, shuffle=False)
     with torch.no_grad():
         inference_latency = []
@@ -70,12 +73,25 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
     plt.ylabel("Inference latency [s]")
     plt.savefig(f"out/{model.__class__.__name__}_inference_latency.png")
 
+def size_on_disk(model):
+    dir = 'out'
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    torch.save(model.state_dict(), f"{dir}/temp.p")
+    size = os.path.getsize(f"{dir}/temp.p")
+    print(f"Model Size on Disk: {size/1e6} MB")
+    os.remove(f"{dir}/temp.p")
+    return size
+
 def benchmarking(func):
     def wrapper(*args, **kwargs):
         device = kwargs['device']
         model = kwargs['model'].to(device)
         test_dataset = kwargs['test_dataset']
         layers = get_layers(model)
+
+        # Mesaure THE SIZE OF MODEL ON DISK
+        size_on_disk(model)
 
         # COUNT THE NUMBER OF PARAMETERS
         parmas_dict = {}
@@ -164,7 +180,6 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
     dummy_time['val'] = val_time
     return dummy_time
 
-# Quantization
 class Quantize:
     def __init__(self, x_tensor:torch.Tensor, y_type:str):
         '''
