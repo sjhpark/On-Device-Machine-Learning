@@ -3,8 +3,9 @@ from data_processing import *
 from models import *
 from arguments import arguments
 import torch
+import torch.quantization
 
-def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, bias, val):
+def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, quantize, q_domain, bias, val):
     
     # config
     config = load_yaml('config')
@@ -48,7 +49,9 @@ def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, bias,
         vision_train_labels, vision_test_labels = MNISTDataProcessor().labels()
         vision_train_features, vision_test_features = MNISTDataProcessor().features()
         input_dim = len(vision_train_features[0])
+
         model = FFNN(input_dim, hidden_dim['MNIST'], out_dim['MNIST'], num_hidden, bias).to(device)
+
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
         vision_train_dataset = Vision_Dataset(vision_train_features, vision_train_labels)
@@ -65,7 +68,9 @@ def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, bias,
         val_dataloader=vision_test_dataloader,
         test_dataset = vision_test_dataset,
         device=device,
-        val = val)
+        val = val,
+        quantize = quantize,
+        q_domain = q_domain)
 
 if __name__ == '__main__':
     main(**arguments())

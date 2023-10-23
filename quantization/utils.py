@@ -9,6 +9,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from typing import Tuple
 import os
+from arguments import arguments
+import copy
 
 def load_yaml(filename):
     # LOAD YAML FILE
@@ -54,7 +56,6 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
                 print("Warm-up begins...")
                 for _ in range(warmup_itr):
                     _ = model(features)
-                print("Warm-up complete!")
             # MEASURE INFERENCE LATENCY    
             begin = time.time()
             _ = model(features)
@@ -74,6 +75,9 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
     plt.savefig(f"out/{model.__class__.__name__}_inference_latency.png")
 
 def size_on_disk(model):
+    '''
+    Reference: https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html
+    '''
     dir = 'out'
     if not os.path.exists(dir):
         os.makedirs(dir)
@@ -83,12 +87,26 @@ def size_on_disk(model):
     os.remove(f"{dir}/temp.p")
     return size
 
+def apply_quantize(model, quantize, q_domain):
+    q_types = {"qint8": torch.qint8, "float16": torch.float16}
+    if quantize == "dynamic":
+        model = torch.quantization.quantize_dynamic(model, {nn.Linear, nn.ReLU}, dtype=q_types[q_domain])
+        print(f"Applying Dynamic Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: {q_domain}")
+    elif quantize == "static":
+        pass
+    return model
+
 def benchmarking(func):
     def wrapper(*args, **kwargs):
         device = kwargs['device']
         model = kwargs['model'].to(device)
         test_dataset = kwargs['test_dataset']
         layers = get_layers(model)
+
+        # Quantization
+        quantize = kwargs['quantize']
+        q_domain = kwargs['q_domain']
+        model = apply_quantize(model, quantize, q_domain)
 
         # Mesaure THE SIZE OF MODEL ON DISK
         size_on_disk(model)
@@ -112,6 +130,7 @@ def benchmarking(func):
 
         # COUNT INFERENCE LATENCY
         warmup_itr = 100
+        # print("qaunt model dtype:", next(model.parameters()).dtype)
         measure_inference_latency_CPU(model, test_dataset, device, warmup_itr)
 
         # COUNT TOTAL TRAINING TIME
@@ -123,7 +142,7 @@ def benchmarking(func):
     return wrapper
 
 @benchmarking
-def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, test_dataset, device, val):
+def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, test_dataset, device, val, quantize, q_domain):
     val_time = 0.0
     dummy_time = {}
 
@@ -150,7 +169,12 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
         if val:
             val_begin = time.time()
             print("Validating...")
-            model.eval()
+
+            # QUANTIZE THE VALIDATION MODEL
+            val_model = copy.deepcopy(model)
+            val_model = apply_quantize(val_model, quantize, q_domain)
+
+            val_model.eval()
             with torch.no_grad():
                 # COMPUTE TRAINING ACCURACY
                 train_correct = 0
@@ -158,7 +182,7 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                     features, labels = input_batch
                     features = features.to(device)
                     labels = labels.to(device)
-                    outputs = model(features)
+                    outputs = val_model(features)
                     _, predicted = torch.max(outputs.data, dim=1)
                     train_correct += (predicted == labels).sum().item()
                     train_acc = train_correct / len(train_dataloader.dataset) * 100
@@ -168,7 +192,7 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                     features, labels = input_batch
                     features = features.to(device)
                     labels = labels.to(device)
-                    outputs = model(features)
+                    outputs = val_model(features)
                     _, predicted = torch.max(outputs.data, dim=1)
                     dev_correct += (predicted == labels).sum().item()
                 dev_acc = dev_correct / len(val_dataloader.dataset) * 100
