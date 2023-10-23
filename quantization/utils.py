@@ -87,13 +87,52 @@ def size_on_disk(model):
     os.remove(f"{dir}/temp.p")
     return size
 
-def apply_quantize(model, quantize, q_domain):
-    q_types = {"qint8": torch.qint8, "float16": torch.float16}
-    if quantize == "dynamic":
-        model = torch.quantization.quantize_dynamic(model, {nn.Linear, nn.ReLU}, dtype=q_types[q_domain])
+def apply_PTquantize(model, PTQ_type, q_domain, val_dataloader:None):
+    '''
+    torch.quantization:
+        Post-Training Dynamic Quantization:
+            Float32 -> Float16, qint8, etc.
+            Ref:https://pytorch.org/blog/quantization-in-practice/#post-training-static-quantization-ptq
+            Quantizes (calculates the scale factor for) the weights (parameters) in advance.
+            Quantizes (calculates the scale factor for) activations dynamically (on the fly) based on the data range observed at runtime.
+            As of Oct 2023, only Linear and Recurrent (LSTM, GRU, RNN) layers are supported for dynamic quantization.
+        Post-Training Static Quantization:
+            Float32 -> qint8
+            Ref: https://pytorch.org/blog/quantization-in-practice/#post-training-static-quantization-ptq
+            Quantizes (calculates scale factor and zero point for) the weights and activations per layer in the model in advance.
+            Quantizes the activations of the model based on the calibrated training data.
+    '''
+    if PTQ_type == "dynamic": # Float32 -> Float16, qint8, etc.
+        q_types = {"qint8": torch.qint8, "float16": torch.float16}
         print(f"Applying Dynamic Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: {q_domain}")
-    elif quantize == "static":
-        pass
+        model = torch.quantization.quantize_dynamic(model, {nn.Linear, nn.ReLU}, dtype=q_types[q_domain])
+    elif PTQ_type == "static": # Float32 -> qint8
+        print(f"Applying Static Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: {q_domain}")
+        model = copy.deepcopy(model.model)
+        model.eval()
+
+        # Module Fuse - Let's skip Module Fusion since the model is shallow.
+        # Details: https://pytorch.org/tutorials/recipes/fuse.html
+
+        # Insert stubs
+        model = nn.Sequential(torch.quantization.QuantStub(), 
+                  *model,
+                  torch.quantization.DeQuantStub())
+
+        # Prepare
+        backend = 'fbgemm'
+        model.qconfig = torch.quantization.get_default_qconfig(backend)
+        torch.quantization.prepare(model, inplace=True)
+
+        # Calibrate
+        with torch.inference_mode():
+            for input_batch in val_dataloader:
+                features, labels = input_batch
+                model(features)
+        
+        # Convert to quantized model
+        torch.quantization.convert(model, inplace=True)
+
     return model
 
 def benchmarking(func):
@@ -104,11 +143,12 @@ def benchmarking(func):
         layers = get_layers(model)
 
         # Quantization
-        quantize = kwargs['quantize']
+        PTQ_type = kwargs['PTQ_type']
         q_domain = kwargs['q_domain']
-        model = apply_quantize(model, quantize, q_domain)
+        val_dataloader = kwargs['val_dataloader']
+        model = apply_PTquantize(model, PTQ_type, q_domain, val_dataloader)
 
-        # Mesaure THE SIZE OF MODEL ON DISK
+        # MEASURE THE SIZE OF MODEL ON DISK
         size_on_disk(model)
 
         # COUNT THE NUMBER OF PARAMETERS
@@ -129,7 +169,7 @@ def benchmarking(func):
         print(f"The total FLOPs in {model.__class__.__name__}: {FLOPs/1e9:.6f} GFLOPs")
 
         # COUNT INFERENCE LATENCY
-        warmup_itr = 100
+        warmup_itr = 200
         # print("qaunt model dtype:", next(model.parameters()).dtype)
         measure_inference_latency_CPU(model, test_dataset, device, warmup_itr)
 
@@ -142,7 +182,7 @@ def benchmarking(func):
     return wrapper
 
 @benchmarking
-def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, test_dataset, device, val, quantize, q_domain):
+def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, test_dataset, device, val, PTQ_type, q_domain):
     val_time = 0.0
     dummy_time = {}
 
@@ -172,7 +212,8 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
 
             # QUANTIZE THE VALIDATION MODEL
             val_model = copy.deepcopy(model)
-            val_model = apply_quantize(val_model, quantize, q_domain)
+            val_model = apply_PTquantize(val_model, PTQ_type, q_domain, val_dataloader)
+            size_on_disk(val_model)
 
             val_model.eval()
             with torch.no_grad():
@@ -251,10 +292,10 @@ class Quantize:
     def linear_mapping(self):
         '''
         Quantization
-        Q(r) = round(r / s) + z
+        Q(r) = round(r / s + z) 
         '''
         self.s, self.z = self.scale_and_zero_point(self.x_min, self.x_max, self.q_min, self.q_max)
-        tensor = torch.round(self.tensor/self.s) + self.z
+        tensor = torch.round(self.tensor/self.s + self.z)
         tensor = torch.clamp(tensor, self.q_min, self.q_max)
         return tensor # quantized tensor
 

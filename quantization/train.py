@@ -5,7 +5,7 @@ from arguments import arguments
 import torch
 import torch.quantization
 
-def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, quantize, q_domain, bias, val):
+def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, PTQ_type, q_domain, bias, val):
     
     # config
     config = load_yaml('config')
@@ -69,7 +69,7 @@ def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, quant
         test_dataset = vision_test_dataset,
         device=device,
         val = val,
-        quantize = quantize,
+        PTQ_type = PTQ_type,
         q_domain = q_domain)
 
 if __name__ == '__main__':

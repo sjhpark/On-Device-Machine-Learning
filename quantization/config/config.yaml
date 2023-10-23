@@ -3,3 +3,6 @@ paths:
   MNIST_data_dir: 'datasets/MNIST'
 
 device: 'cpu' # cpu or cuda:0
+
+processing:
+  transform: 'Center Crop'

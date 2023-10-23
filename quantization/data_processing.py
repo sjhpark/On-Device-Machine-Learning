@@ -132,7 +132,7 @@ class MNISTDataProcessor:
         self.vision_dir = config['paths']['MNIST_data_dir']
 
         self.transform_flag = "True"
-        self.transform_type = "Crop"
+        self.transform_type = config['processing']['transform']
         self.resize_ratio = 1 # the number to divide the original image size by
 
         self.vision_train = self.train_file()
@@ -147,8 +147,8 @@ class MNISTDataProcessor:
         if transform_type == 'Resize':
             print(f"Resizing test images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
             transform = transforms.Resize((new_image_size, new_image_size), antialias=True)
-        elif transform_type == "Crop":
-            print(f"Cropping images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
+        elif transform_type == "Center Crop":
+            print(f"Center Cropping images from {int(image_size[0]**0.5)}x{int(image_size[0]**0.5)} to {new_image_size}x{new_image_size}")
             transform = transforms.CenterCrop((new_image_size, new_image_size))
         
         image1D_transformed_list = []
