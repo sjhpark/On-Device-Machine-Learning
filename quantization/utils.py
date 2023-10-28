@@ -9,8 +9,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from typing import Tuple
 import os
-from arguments import arguments
 import copy
+from arguments import arguments
 
 def load_yaml(filename):
     # LOAD YAML FILE
@@ -61,7 +61,7 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
             _ = model(features)
             end = time.time()
             inference_latency.append(end - begin)
-    mean_inference_latency = sum(inference_latency) / len(test_dataloader) * 1000
+    mean_inference_latency = np.mean(inference_latency)*1000
     print(f"Mean inference latency: {mean_inference_latency:.3f}ms")
     # plot inference latency over iterations and save it as a figure
     if not os.path.exists("out"):
@@ -87,31 +87,35 @@ def size_on_disk(model):
     os.remove(f"{dir}/temp.p")
     return size
 
-def apply_PTquantize(model, PTQ_type, q_domain, val_dataloader:None):
+def apply_PTquantize(model, device, PTQ_type, q_domain, val_dataloader:None):
     '''
-    torch.quantization:
-        Post-Training Dynamic Quantization:
-            Float32 -> Float16, qint8, etc.
-            Ref:https://pytorch.org/blog/quantization-in-practice/#post-training-static-quantization-ptq
-            Quantizes (calculates the scale factor for) the weights (parameters) in advance.
-            Quantizes (calculates the scale factor for) activations dynamically (on the fly) based on the data range observed at runtime.
-            As of Oct 2023, only Linear and Recurrent (LSTM, GRU, RNN) layers are supported for dynamic quantization.
-        Post-Training Static Quantization:
-            Float32 -> qint8
-            Ref: https://pytorch.org/blog/quantization-in-practice/#post-training-static-quantization-ptq
-            Quantizes (calculates scale factor and zero point for) the weights and activations per layer in the model in advance.
-            Quantizes the activations of the model based on the calibrated training data.
+    Apply Post-Training Quantization to the model.
+        torch.quantization:
+            Post-Training Dynamic Quantization:
+                Float32 -> Float16, qint8, etc.
+                Ref:https://pytorch.org/blog/quantization-in-practice/#post-training-static-quantization-ptq
+                Quantizes (calculates the scale factor for) the weights (parameters) in advance.
+                Quantizes (calculates the scale factor for) activations dynamically (on the fly) based on the data range observed at runtime.
+                As of Oct 2023, only Linear and Recurrent (LSTM, GRU, RNN) layers are supported for dynamic quantization.
+            Post-Training Static Quantization:
+                Float32 -> qint8
+                Ref: https://pytorch.org/blog/quantization-in-practice/#post-training-static-quantization-ptq
+                Quantizes (calculates scale factor and zero point for) the weights and activations per layer in the model in advance.
+                Quantizes the activations of the model based on the calibrated training data.
     '''
     if PTQ_type == "dynamic": # Float32 -> Float16, qint8, etc.
-        q_types = {"qint8": torch.qint8, "float16": torch.float16}
+        assert device == torch.device("cpu"), "PyTorch Dynamic Quantization is not supported on CPU."
         print(f"Applying Dynamic Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: {q_domain}")
-        model = torch.quantization.quantize_dynamic(model, {nn.Linear, nn.ReLU}, dtype=q_types[q_domain])
+        model = torch.quantization.quantize_dynamic(model, {nn.Linear, nn.ReLU}, dtype=q_domain)
+    
     elif PTQ_type == "static": # Float32 -> qint8
-        print(f"Applying Static Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: {q_domain}")
-        model = copy.deepcopy(model.model)
+        assert device == torch.device("cpu"), "PyTorch Static Quantization is only supported on CPU."
+        print(f"Applying Static Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: qint8")
+        model = copy.deepcopy(model.model).to(device)
         model.eval()
 
-        # Module Fuse - Let's skip Module Fusion since the model is shallow.
+        # Module Fuse 
+        # Let's skip Module Fusion since the model is shallow.
         # Details: https://pytorch.org/tutorials/recipes/fuse.html
 
         # Insert stubs
@@ -120,7 +124,7 @@ def apply_PTquantize(model, PTQ_type, q_domain, val_dataloader:None):
                   torch.quantization.DeQuantStub())
 
         # Prepare
-        backend = 'fbgemm'
+        backend = 'fbgemm' # 'fbgemm' for server; 'qnnpack' for mobile
         model.qconfig = torch.quantization.get_default_qconfig(backend)
         torch.quantization.prepare(model, inplace=True)
 
@@ -128,6 +132,7 @@ def apply_PTquantize(model, PTQ_type, q_domain, val_dataloader:None):
         with torch.inference_mode():
             for input_batch in val_dataloader:
                 features, labels = input_batch
+                features = features.to(device)
                 model(features)
         
         # Convert to quantized model
@@ -146,7 +151,7 @@ def benchmarking(func):
         PTQ_type = kwargs['PTQ_type']
         q_domain = kwargs['q_domain']
         val_dataloader = kwargs['val_dataloader']
-        model = apply_PTquantize(model, PTQ_type, q_domain, val_dataloader)
+        model = apply_PTquantize(model, device, PTQ_type, q_domain, val_dataloader)
 
         # MEASURE THE SIZE OF MODEL ON DISK
         size_on_disk(model)
@@ -168,10 +173,12 @@ def benchmarking(func):
             FLOPs += 2 * MAC # 1 FLOP ~= 2 MAC for FMA
         print(f"The total FLOPs in {model.__class__.__name__}: {FLOPs/1e9:.6f} GFLOPs")
 
-        # COUNT INFERENCE LATENCY
-        warmup_itr = 200
-        # print("qaunt model dtype:", next(model.parameters()).dtype)
-        measure_inference_latency_CPU(model, test_dataset, device, warmup_itr)
+        if PTQ_type == "AMP":
+            pass # will measure the inference latency in the validation loop
+        else:
+            # COUNT INFERENCE LATENCY
+            warmup_itr = 200
+            measure_inference_latency_CPU(model, test_dataset, device, warmup_itr)
 
         # COUNT TOTAL TRAINING TIME
         begin = time.time()
@@ -185,25 +192,46 @@ def benchmarking(func):
 def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, test_dataset, device, val, PTQ_type, q_domain):
     val_time = 0.0
     dummy_time = {}
+    use_amp = True
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     for epoch in range(epochs):
         # TRAIN
         model.train()
-        for i, input_batch in tqdm(enumerate(train_dataloader)):
-            # INPUT BATCH: FEATURES and LABELS
-            features, labels = input_batch
-            features = features.to(device)
-            labels = labels.to(device)
-            # ZERO OUT THE GRADIENTS
-            optimizer.zero_grad()
-            # FORWARD PASS
-            outputs = model(features)
-            # LOSS COMPUTATION
-            loss = criterion(outputs, labels)
-            # BACKWARD PASS
-            loss.backward()
-            # WEIGHTS UPDATE
-            optimizer.step()
+        if PTQ_type == 'AMP': # Automatic Mixed Precision Training
+            for i, input_batch in tqdm(enumerate(train_dataloader)):
+                # INPUT BATCH: FEATURES and LABELS
+                features, labels = input_batch
+                features = features.to(device)
+                labels = labels.to(device)
+                # ZERO OUT THE GRADIENTS
+                optimizer.zero_grad()
+                # FORWARD PASS
+                device_type = 'cuda' if device == torch.device('cuda') else 'cpu'
+                with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):
+                    outputs = model(features)
+                    # LOSS COMPUTATION
+                    loss = criterion(outputs, labels)
+                # BACKWARD PASS
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()           
+        else:
+            for i, input_batch in tqdm(enumerate(train_dataloader)):
+                # INPUT BATCH: FEATURES and LABELS
+                features, labels = input_batch
+                features = features.to(device)
+                labels = labels.to(device)
+                # ZERO OUT THE GRADIENTS
+                optimizer.zero_grad()
+                # FORWARD PASS
+                outputs = model(features)
+                # LOSS COMPUTATION
+                loss = criterion(outputs, labels)
+                # BACKWARD PASS
+                loss.backward()
+                # WEIGHTS UPDATE
+                optimizer.step()
 
         # ACCURACY COMPUTATION
         if val:
@@ -212,8 +240,7 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
 
             # QUANTIZE THE VALIDATION MODEL
             val_model = copy.deepcopy(model)
-            val_model = apply_PTquantize(val_model, PTQ_type, q_domain, val_dataloader)
-            size_on_disk(val_model)
+            val_model = apply_PTquantize(val_model, device, PTQ_type, q_domain, val_dataloader)
 
             val_model.eval()
             with torch.no_grad():
@@ -223,8 +250,14 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                     features, labels = input_batch
                     features = features.to(device)
                     labels = labels.to(device)
-                    outputs = val_model(features)
-                    _, predicted = torch.max(outputs.data, dim=1)
+                    if PTQ_type == 'AMP': # Automatic Mixed Precision
+                        device_type = 'cuda' if device == torch.device('cuda') else 'cpu'
+                        with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):
+                            outputs = val_model(features)
+                            _, predicted = torch.max(outputs.data, dim=1)
+                    else:
+                        outputs = val_model(features)
+                        _, predicted = torch.max(outputs.data, dim=1)
                     train_correct += (predicted == labels).sum().item()
                     train_acc = train_correct / len(train_dataloader.dataset) * 100
                 # COMPUTE VALIDATION ACCURACY
@@ -233,18 +266,42 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                     features, labels = input_batch
                     features = features.to(device)
                     labels = labels.to(device)
-                    outputs = val_model(features)
-                    _, predicted = torch.max(outputs.data, dim=1)
+                    if PTQ_type == 'AMP': # Automatic Mixed Precision
+                        device_type = 'cuda' if device == torch.device('cuda') else 'cpu'
+                        with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):
+                            outputs = val_model(features)
+                            _, predicted = torch.max(outputs.data, dim=1)
+                    else:
+                        outputs = val_model(features)
+                        _, predicted = torch.max(outputs.data, dim=1)
                     dev_correct += (predicted == labels).sum().item()
                 dev_acc = dev_correct / len(val_dataloader.dataset) * 100
+
             # PRINT STATISTICS
             print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Val Accuracy: {dev_acc:.3f}%")
             val_end = time.time()
             val_time += (val_end - val_begin)
-    
+        
+    # COUNT INFERENCE LATENCY for AMP
+    if PTQ_type == 'AMP':
+        inference_latency = []
+        print("Warm-up begins...")
+        for _ in range(200):
+            _ = model(features)
+        # MEASURE INFERENCE LATENCY
+        device_type = 'cuda' if device == torch.device('cuda') else 'cpu'
+        with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):    
+            begin = time.time()
+            _ = model(features)
+            end = time.time()
+            inference_latency.append(end - begin)
+        mean_inference_latency = np.mean(inference_latency) * 1000
+        print(f"Mean inference latency: {mean_inference_latency:.3f}ms")
+
     dummy_time['val'] = val_time
     return dummy_time
 
+###################################### Quantization ######################################
 class Quantize:
     def __init__(self, x_tensor:torch.Tensor, y_type:str):
         '''
@@ -269,7 +326,7 @@ class Quantize:
                     'int16': (-32768, 32767),
                     'int32': (-2147483648, 2147483647),
                     'int64': (-9223372036854775808, 9223372036854775807),
-                    } 
+                    }
 
         self.tensor = x_tensor # input tensor
         self.y_type = y_type # target type

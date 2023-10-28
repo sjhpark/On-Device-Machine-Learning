@@ -27,6 +27,7 @@ def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, PTQ_t
         lang_train_features, lang_dev_features = SSTDataProcessor().features()
         input_dim = len(lang_train_features[0])
         model = FFNN(input_dim, hidden_dim['SST'], out_dim['SST'], num_hidden, bias).to(device)
+        # model = FFNN_qint8(input_dim, hidden_dim['SST'], out_dim['SST'], num_hidden, bias).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         
         lang_train_dataset = Lang_Dataset(lang_train_features, lang_train_labels)
@@ -52,13 +53,20 @@ def main(dataset, lr, batch_size, num_hidden, epochs, hidden_dim, out_dim, PTQ_t
 
         model = FFNN(input_dim, hidden_dim['MNIST'], out_dim['MNIST'], num_hidden, bias).to(device)
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        if PTQ_type == 'AMP':
+            optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
         vision_train_dataset = Vision_Dataset(vision_train_features, vision_train_labels)
         vision_train_dataloader = DataLoader(vision_train_dataset, batch_size=batch_size, shuffle=True)
 
         vision_test_dataset = Vision_Dataset(vision_test_features, vision_test_labels)
         vision_test_dataloader = DataLoader(vision_test_dataset, batch_size=batch_size, shuffle=True)
+
+        if q_domain != 'None':
+            q_types = {"qint8": torch.qint8, "float16": torch.float16}
+            q_domain = q_types[q_domain]
 
         train(model=model, 
         criterion=criterion, 
