@@ -31,14 +31,18 @@ def get_layers(model):
             layers.append(module)
     return layers
 
-def print_params_layer(layer: nn.Module, parmas_dict: dict) -> None:
-    # TODO print the number of params in other types of layers (e.g., Conv2d)
-    if isinstance(layer, nn.Linear) == False:
-        print(f"\t{layer.__class__.__name__}: = {parmas_dict[layer.__class__.__name__]:,}")
-    elif isinstance(layer, nn.Linear) and layer.bias is None:
-        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} = {parmas_dict[layer.__class__.__name__]:,}")
-    elif isinstance(layer, nn.Linear) and layer.bias is not None:
-        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} + {layer.out_features} = {parmas_dict[layer.__class__.__name__]:,}")
+def print_params_layer(layer: nn.Module) -> None:
+    if "Linear" not in layer.__class__.__name__:
+        # TODO: Compute the number of params in other types of layers (e.g., Conv2d) 
+        print(f"\t{layer.__class__.__name__}: = {0}") # 0 for activation layers
+        params = 0
+    elif "Linear" in layer.__class__.__name__ and layer.bias is None:
+        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} = {layer.in_features * layer.out_features:,}")
+        params = layer.in_features * layer.out_features
+    elif "Linear" in layer.__class__.__name__ and layer.bias is not None:
+        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} + {layer.out_features} = {layer.in_features * layer.out_features + layer.out_features:,}")
+        params = layer.in_features * layer.out_features + layer.out_features
+    return params
 
 def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
     config = load_yaml('config')
@@ -145,7 +149,6 @@ def benchmarking(func):
         device = kwargs['device']
         model = kwargs['model'].to(device)
         test_dataset = kwargs['test_dataset']
-        layers = get_layers(model)
 
         # Quantization
         PTQ_type = kwargs['PTQ_type']
@@ -153,20 +156,22 @@ def benchmarking(func):
         val_dataloader = kwargs['val_dataloader']
         model = apply_PTquantize(model, device, PTQ_type, q_domain, val_dataloader)
 
+        # GET LAYERS
+        layers = get_layers(model)
+        print(layers)
+
         # MEASURE THE SIZE OF MODEL ON DISK
         size_on_disk(model)
 
         # COUNT THE NUMBER OF PARAMETERS
-        parmas_dict = {}
+        params = 0
         print(f"The number of parameters in each layer of {model.__class__.__name__}:")
         for layer in layers:
-            parmas_dict[layer.__class__.__name__] = sum(params.numel() for params in layer.parameters())
-            print_params_layer(layer, parmas_dict)
-        num_params = sum(params.numel() for params in model.parameters())
-        print(f"The total number of parameters in {model.__class__.__name__}: {num_params:,}")
+            params += print_params_layer(layer)
+        print(f"The total number of parameters in {model.__class__.__name__}: {params:,}")
         
         # COUNT FLOPs (Floating Point Operations) OF LINEAR LAYERS; Consider FMA (Fused Multiply-Add) is used in the hardware architecture.
-        fc_layers = [layer for layer in layers if isinstance(layer, nn.Linear)]
+        fc_layers = [layer for layer in layers if "Linear" in layer.__class__.__name__]
         FLOPs = 0
         for _, fc_layer in enumerate(fc_layers):
             MAC = fc_layer.in_features * fc_layer.out_features # Multiply-Accumulate
