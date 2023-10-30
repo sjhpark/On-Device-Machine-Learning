@@ -44,7 +44,7 @@ def print_params_layer(layer: nn.Module) -> None:
         params = layer.in_features * layer.out_features + layer.out_features
     return params
 
-def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
+def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr, PTQ_type=None):
     config = load_yaml('config')
     device = config['device']
     device = torch.device(device)
@@ -55,6 +55,17 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
         for i, data in tqdm(enumerate(test_dataloader)):
             features, _ = data
             features = features.to(device)
+
+            ##################################################### custom quantization #####################################################
+            if PTQ_type == 'custom': # qint8 quantization
+                min_val = torch.min(features)
+                max_val = torch.max(features)
+                num_bits = 8
+                dtype = torch.quint8
+                scale, zero_point = _calculate_scale_and_zeropoint(min_val, max_val, num_bits) # calculate scale and zero_point
+                features = torch.quantize_per_tensor(features, scale=scale, zero_point=zero_point, dtype=dtype) # quint8 features
+            ###########################################################################################################################
+
             # WARM_UP
             if i == 0:
                 print("Warm-up begins...")
@@ -64,7 +75,7 @@ def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr):
             begin = time.time()
             _ = model(features)
             end = time.time()
-            inference_latency.append(end - begin)
+            inference_latency.append((end - begin)/features.shape[0])
     mean_inference_latency = np.mean(inference_latency)*1000
     print(f"Mean inference latency: {mean_inference_latency:.3f}ms")
     # plot inference latency over iterations and save it as a figure
@@ -90,6 +101,31 @@ def size_on_disk(model):
     print(f"Model Size on Disk: {size/1e6} MB")
     os.remove(f"{dir}/temp.p")
     return size
+
+def _calculate_scale_and_zeropoint(min_val: float, max_val: float, num_bits: int) -> Tuple[float, int]:
+    '''
+    This is for either unsigned quantization.
+    '''
+    x_min, x_max = min_val, max_val # min, max of input tensor
+    x_range = x_max - x_min # x_range = x_max - x_min
+
+    q_min = 0 # q_min = 0 for unsigned quantization
+    q_range = 2**num_bits - 1 # q_range = q_max - q_min = 2**num_bits - 1
+
+    # scale factor
+    s = x_range / q_range
+
+    # zero point
+    if torch.round(x_min / s) == q_min:
+        z = 0
+    else:
+        z = -torch.round(x_min / s) + q_min
+
+    return s, z
+
+def quantize(x: torch.Tensor, scale: float, zero_point: int, dtype=torch.uint8):
+    inv_scale = 1.0 / scale
+    return torch.clamp(torch.round(x * inv_scale, decimals=0) + zero_point, 0, 255).to(dtype)
 
 def apply_PTquantize(model, device, PTQ_type, q_domain, val_dataloader:None):
     '''
@@ -141,6 +177,19 @@ def apply_PTquantize(model, device, PTQ_type, q_domain, val_dataloader:None):
         
         # Convert to quantized model
         torch.quantization.convert(model, inplace=True)
+    
+    elif PTQ_type == "custom": # qint8 quantization
+        from models import FFNN_qint8
+        # from data_processing import MNISTDataProcessor
+        # vision_train_features, vision_test_features = MNISTDataProcessor().features()
+        # input_dim = len(vision_train_features[0])
+        features, labels = next(iter(val_dataloader))
+        input_dim = features.shape[1]
+        hidden_dim = {'MNIST': 1024}
+        out_dim = {'MNIST': 10}
+        num_hidden = 2
+        bias = True
+        model = FFNN_qint8(input_dim, hidden_dim['MNIST'], out_dim['MNIST'], num_hidden, bias).to(device) # takes quint8 tensor as input
 
     return model
 
@@ -158,7 +207,6 @@ def benchmarking(func):
 
         # GET LAYERS
         layers = get_layers(model)
-        print(layers)
 
         # MEASURE THE SIZE OF MODEL ON DISK
         size_on_disk(model)
@@ -180,6 +228,9 @@ def benchmarking(func):
 
         if PTQ_type == "AMP":
             pass # will measure the inference latency in the validation loop
+        elif PTQ_type == "custom":
+            warmup_itr = 200
+            measure_inference_latency_CPU(model, test_dataset, device, warmup_itr, "custom")
         else:
             # COUNT INFERENCE LATENCY
             warmup_itr = 200
@@ -260,6 +311,15 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                         with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):
                             outputs = val_model(features)
                             _, predicted = torch.max(outputs.data, dim=1)
+                    elif PTQ_type == 'custom': # qint8 quantization
+                        min_val = torch.min(features)
+                        max_val = torch.max(features)
+                        num_bits = 8
+                        dtype = torch.quint8
+                        scale, zero_point = _calculate_scale_and_zeropoint(min_val, max_val, num_bits)
+                        features = torch.quantize_per_tensor(features, scale=scale, zero_point=zero_point, dtype=dtype) # quint8 features
+                        outputs = val_model(features)
+                        _, predicted = torch.max(outputs.data, dim=1)
                     else:
                         outputs = val_model(features)
                         _, predicted = torch.max(outputs.data, dim=1)
@@ -276,6 +336,15 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                         with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):
                             outputs = val_model(features)
                             _, predicted = torch.max(outputs.data, dim=1)
+                    elif PTQ_type == 'custom': # qint8 quantization
+                        min_val = torch.min(features)
+                        max_val = torch.max(features)
+                        num_bits = 8
+                        dtype = torch.quint8
+                        scale, zero_point = _calculate_scale_and_zeropoint(min_val, max_val, num_bits)
+                        features = torch.quantize_per_tensor(features, scale=scale, zero_point=zero_point, dtype=dtype) # quint8 features
+                        outputs = val_model(features)
+                        _, predicted = torch.max(outputs.data, dim=1)
                     else:
                         outputs = val_model(features)
                         _, predicted = torch.max(outputs.data, dim=1)
@@ -289,17 +358,24 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
         
     # COUNT INFERENCE LATENCY for AMP
     if PTQ_type == 'AMP':
-        inference_latency = []
-        print("Warm-up begins...")
-        for _ in range(200):
-            _ = model(features)
-        # MEASURE INFERENCE LATENCY
         device_type = 'cuda' if device == torch.device('cuda') else 'cpu'
-        with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):    
-            begin = time.time()
-            _ = model(features)
-            end = time.time()
-            inference_latency.append(end - begin)
+        # Warmup
+        features, labels = next(iter(val_dataloader))
+        fake_input = torch.zeros_like(features)
+        fake_input = fake_input.to(device)
+        for _ in tqdm(range(200), desc="Warmup"):
+            _ = model(fake_input)
+        with torch.no_grad():
+            inference_latency = []
+            for input_batch in val_dataloader:
+                features, labels = input_batch
+                features = features.to(device)
+                # MEASURE INFERENCE LATENCY
+                with torch.autocast(device_type=device_type, dtype=q_domain, enabled=use_amp):    
+                    begin = time.time()
+                    _ = model(features)
+                    end = time.time()
+                    inference_latency.append((end - begin) / features.shape[0])
         mean_inference_latency = np.mean(inference_latency) * 1000
         print(f"Mean inference latency: {mean_inference_latency:.3f}ms")
 
