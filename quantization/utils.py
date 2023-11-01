@@ -144,12 +144,12 @@ def apply_PTquantize(model, device, PTQ_type, q_domain, val_dataloader:None):
                 Quantizes the activations of the model based on the calibrated training data.
     '''
     if PTQ_type == "dynamic": # Float32 -> Float16, qint8, etc.
-        assert device == torch.device("cpu"), "PyTorch Dynamic Quantization is not supported on CPU."
+        assert device == torch.device("cpu"), "PyTorch Dynamic Quantization is not supported on GPU."
         print(f"Applying Dynamic Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: {q_domain}")
         model = torch.quantization.quantize_dynamic(model, {nn.Linear, nn.ReLU}, dtype=q_domain)
     
     elif PTQ_type == "static": # Float32 -> qint8
-        assert device == torch.device("cpu"), "PyTorch Static Quantization is only supported on CPU."
+        assert device == torch.device("cpu"), "PyTorch Dynamic Quantization is not supported on GPU."
         print(f"Applying Static Quantization to {model.__class__.__name__} model.\n\tTarget Quantization Domain: qint8")
         model = copy.deepcopy(model.model).to(device)
         model.eval()
