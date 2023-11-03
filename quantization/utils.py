@@ -204,6 +204,7 @@ def benchmarking(func):
         q_domain = kwargs['q_domain']
         val_dataloader = kwargs['val_dataloader']
         model = apply_PTquantize(model, device, PTQ_type, q_domain, val_dataloader)
+        print(model.__class__.__name__)
 
         # GET LAYERS
         layers = get_layers(model)
@@ -253,8 +254,8 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
 
     for epoch in range(epochs):
         # TRAIN
-        model.train()
         if PTQ_type == 'AMP': # Automatic Mixed Precision Training
+            model.train()
             for i, input_batch in tqdm(enumerate(train_dataloader)):
                 # INPUT BATCH: FEATURES and LABELS
                 features, labels = input_batch
@@ -271,8 +272,9 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
                 # BACKWARD PASS
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
-                scaler.update()           
+                scaler.update()   
         else:
+            model.train()
             for i, input_batch in tqdm(enumerate(train_dataloader)):
                 # INPUT BATCH: FEATURES and LABELS
                 features, labels = input_batch
