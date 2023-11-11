@@ -106,6 +106,20 @@ class MNISTDataProcessor:
 
         return vision_train_features, vision_test_features, vision_train_labels, vision_test_labels
 
+    def vision_test_dataset(self):
+        # test features
+        print("parsing test features...")
+        # normalize each row of vision_test[:, 1:]
+        vision_test_features = self.vision_test.iloc[:, 1:].apply(lambda x: (x-np.mean(x))/np.std(x), axis=1)
+        vision_test_features = vision_test_features.values.tolist()
+
+        # test labels
+        vision_test_labels = self.vision_test["labels"].tolist()
+        print(f"The number of test labels: {len(vision_test_labels)}")
+
+        vision_test_dataset = Vision_Dataset(vision_test_features, vision_test_labels)
+        return vision_test_dataset
+
 # Custom Vision Dataset
 class Vision_Dataset(Dataset):
     def __init__(self, features, labels):
