@@ -116,7 +116,7 @@ def save_model_weights(model, fname):
     torch.save(model.state_dict(), f"out/{model.__class__.__name__}_weights_{fname}.pth")
     print(f"Saved {model.__class__.__name__}'s weights as out/{model.__class__.__name__}_weights_{fname}.pth.")
 
-def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, device, val):
+def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader, device):
     val_time = 0.0
     dummy_time = {}
 
@@ -140,36 +140,35 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
             optimizer.step()
 
         # ACCURACY COMPUTATION
-        if val:
-            val_begin = time.time()
-            print("Validating...")
-            model.eval()
-            with torch.no_grad():
-                # COMPUTE TRAINING ACCURACY
-                train_correct = 0
-                for input_batch in train_dataloader:
-                    features, labels = input_batch
-                    features = features.to(device)
-                    labels = labels.to(device)
-                    outputs = model(features)
-                    _, predicted = torch.max(outputs.data, dim=1)
-                    train_correct += (predicted == labels).sum().item()
-                    train_acc = train_correct / len(train_dataloader.dataset) * 100
-                # COMPUTE VALIDATION ACCURACY
-                dev_correct = 0
-                for input_batch in val_dataloader:
-                    features, labels = input_batch
-                    features = features.to(device)
-                    labels = labels.to(device)
-                    outputs = model(features)
-                    _, predicted = torch.max(outputs.data, dim=1)
-                    dev_correct += (predicted == labels).sum().item()
-                dev_acc = dev_correct / len(val_dataloader.dataset) * 100
+        val_begin = time.time()
+        print("Validating...")
+        model.eval()
+        with torch.no_grad():
+            # COMPUTE TRAINING ACCURACY
+            train_correct = 0
+            for input_batch in train_dataloader:
+                features, labels = input_batch
+                features = features.to(device)
+                labels = labels.to(device)
+                outputs = model(features)
+                _, predicted = torch.max(outputs.data, dim=1)
+                train_correct += (predicted == labels).sum().item()
+                train_acc = train_correct / len(train_dataloader.dataset) * 100
+            # COMPUTE VALIDATION ACCURACY
+            dev_correct = 0
+            for input_batch in val_dataloader:
+                features, labels = input_batch
+                features = features.to(device)
+                labels = labels.to(device)
+                outputs = model(features)
+                _, predicted = torch.max(outputs.data, dim=1)
+                dev_correct += (predicted == labels).sum().item()
+            dev_acc = dev_correct / len(val_dataloader.dataset) * 100
             
-            # PRINT STATISTICS
-            print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Val Accuracy: {dev_acc:.3f}%")
-            val_end = time.time()
-            val_time += (val_end - val_begin)
+        # PRINT STATISTICS
+        print(f"Epoch: {epoch+1}/{epochs}, Step: {i+1}/{len(train_dataloader)}, Train Accuracy: {train_acc:.6f}%, Val Accuracy: {dev_acc:.3f}%")
+        val_end = time.time()
+        val_time += (val_end - val_begin)
     
     dummy_time['val'] = val_time
     return dummy_time
@@ -177,9 +176,7 @@ def train(model, criterion, optimizer, epochs, train_dataloader, val_dataloader,
 def start_train(model, device, criterion, epochs, batch_size, lr):
     from data_processing import MNISTDataProcessor, Vision_Dataset
 
-    vision_train_labels, vision_test_labels = MNISTDataProcessor().labels()
-    vision_train_features, vision_test_features = MNISTDataProcessor().features()
-    input_dim = len(vision_train_features[0])
+    vision_train_features, vision_test_features, vision_train_labels, vision_test_labels = MNISTDataProcessor().features_and_labels()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -190,10 +187,9 @@ def start_train(model, device, criterion, epochs, batch_size, lr):
     vision_test_dataloader = DataLoader(vision_test_dataset, batch_size=batch_size, shuffle=True)
 
     train(model=model, 
-    criterion=criterion, 
+    criterion=criterion,
     optimizer=optimizer, 
     epochs=epochs,
     train_dataloader=vision_train_dataloader, 
     val_dataloader=vision_test_dataloader,
-    test_dataset = vision_test_dataset,
     device=device)
