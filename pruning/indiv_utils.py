@@ -31,6 +31,22 @@ def get_layers(model):
             layers.append(module)
     return layers
 
+class Sparsity():
+    """input: model_layers
+        model_layers: list of layers of a model (run get_all_layers(model) to get this list)"""
+    def __init__(self, model_layers):
+        self.model_layers = model_layers
+
+    def global_level(self):
+        sparisty = 0
+        num_elements = 0
+        for layer in self.model_layers:
+            # if linear layer
+            if isinstance(layer, nn.Linear):
+                sparisty += torch.sum(layer.weight == 0)
+                num_elements += layer.weight.nelement()
+        
+        print(f"Global sparsity: {100. * float(sparisty) / float(num_elements)}%")
 
 def size_on_disk(model):
     '''
