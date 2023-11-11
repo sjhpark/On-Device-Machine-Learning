@@ -58,7 +58,7 @@ def print_params_layer(layer: nn.Module) -> None:
         params = layer.in_features * layer.out_features + layer.out_features
     return params
 
-def measure_inference_latency_CPU(model, test_dataset, device, warmup_itr, PTQ_type=None):
+def measure_inference_latency(model, test_dataset, device, warmup_itr):
     config = load_yaml('config')
     device = config['device']
     device = torch.device(device)
