@@ -1,0 +1,8 @@
+paths:
+  SST_data_dir: "datasets/SST-2"
+  MNIST_data_dir: "datasets/MNIST"
+
+device: "cuda" # cpu or cuda
+
+processing:
+  transform: "Center Crop"
