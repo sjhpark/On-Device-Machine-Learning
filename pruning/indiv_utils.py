@@ -59,16 +59,14 @@ def sparse_representation(model):
 
 class Sparsity():
     """
-    input: model_layers
-        model_layers: list of layers of a model (run get_all_layers(model) to get this list)
+    Compute sparsity of layers in a model.
     Currently, this class only works for weights of linear layers.
     """
-    def __init__(self, model_layers):
-        model_layers = get_layers(model_layers)
-        self.model_layers = model_layers
+    def __init__(self, model):
+        self.layers = get_layers(model)
     
     def each_layer(self):
-        for layer in self.model_layers:
+        for layer in self.layers:
             # if linear layer
             if isinstance(layer, nn.Linear):
                 sparisty = torch.sum(layer.weight == 0)
@@ -78,7 +76,7 @@ class Sparsity():
     def global_level(self):
         sparisty = 0
         num_elements = 0
-        for layer in self.model_layers:
+        for layer in self.layers:
             # if linear layer
             if isinstance(layer, nn.Linear):
                 sparisty += torch.sum(layer.weight == 0)
