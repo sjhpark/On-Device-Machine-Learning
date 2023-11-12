@@ -29,7 +29,15 @@ def get_layers(model):
                 layers += get_layers(m)
         else:
             layers.append(module)
+    layers = nn.ModuleList(layers)
     return layers
+
+def check_buffers(model):
+    """Check buffers in a model.
+    After pruning the model, You will notice that the model size on disk is doubled after pruning.
+    This is because mask buffers are stored in addition to the original parameters."""
+    print(f"Number of buffers in {model.__class__.__name__}: {len(list(model.named_buffers()))}")
+    print(f"Buffers in {model.__class__.__name__}:\n{list(model.named_buffers())}")
 
 class Sparsity():
     """
