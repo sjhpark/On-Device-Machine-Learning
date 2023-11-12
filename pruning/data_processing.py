@@ -1,21 +1,10 @@
 import os
-import csv
-import copy
-import pickle
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-from utils import *
-from arguments import arguments
-
 import torch
-from torchvision.transforms import ToTensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-
-import torchtext
-from torchtext.data import get_tokenizer
+from indiv_utils import load_yaml
 
 # configs
 config = load_yaml('config')
