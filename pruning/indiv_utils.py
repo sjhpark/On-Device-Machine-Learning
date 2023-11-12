@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import time
 import torch
 import torch.nn as nn
+import torch.nn.utils.prune as prune
 from torch.utils.data import DataLoader
 from typing import Tuple
 import os
@@ -39,6 +40,14 @@ def check_buffers(model):
     print(f"Number of buffers in {model.__class__.__name__}: {len(list(model.named_buffers()))}")
     print(f"Buffers in {model.__class__.__name__}:\n{list(model.named_buffers())}")
 
+def sparse_representation(model):
+    """Convert a pruned model to a sparse model by removing reparametrization (mask buffers).
+    Currently, this function only works for weights of linear layers."""
+    layers = get_layers(model=model)
+    for layer in layers:
+        if isinstance(layer, nn.Linear):
+            prune.remove(layer, 'weight')
+
 class Sparsity():
     """
     input: model_layers
@@ -46,6 +55,7 @@ class Sparsity():
     Currently, this class only works for weights of linear layers.
     """
     def __init__(self, model_layers):
+        model_layers = get_layers(model_layers)
         self.model_layers = model_layers
     
     def each_layer(self):
