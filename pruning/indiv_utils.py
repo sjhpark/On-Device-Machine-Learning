@@ -43,10 +43,19 @@ def check_buffers(model):
 def sparse_representation(model):
     """Convert a pruned model to a sparse model by removing reparametrization (mask buffers).
     Currently, this function only works for weights of linear layers."""
+    # Remove reparameterization (mask buffers)
     layers = get_layers(model=model)
     for layer in layers:
         if isinstance(layer, nn.Linear):
             prune.remove(layer, 'weight')
+    
+    # Convert parameters to sparse representation
+    sd = model.state_dict() # state dict
+    for item in sd:
+        if 'weight' in item:
+            print("sparsifying", item)
+        sd[item] = model.state_dict()[item].to_sparse()
+    return sd
 
 class Sparsity():
     """
@@ -99,19 +108,6 @@ def size_on_disk(model):
     os.remove(f"{dir}/temp.p")
     return size
 
-def print_params_layer(layer: nn.Module) -> None:
-    if "Linear" not in layer.__class__.__name__:
-        # TODO: Compute the number of params in other types of layers (e.g., Conv2d) 
-        print(f"\t{layer.__class__.__name__}: = {0}") # 0 for activation layers
-        params = 0
-    elif "Linear" in layer.__class__.__name__ and layer.bias is None:
-        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} = {layer.in_features * layer.out_features:,}")
-        params = layer.in_features * layer.out_features
-    elif "Linear" in layer.__class__.__name__ and layer.bias is not None:
-        print(f"\t{layer.__class__.__name__}: {layer.in_features} * {layer.out_features} + {layer.out_features} = {layer.in_features * layer.out_features + layer.out_features:,}")
-        params = layer.in_features * layer.out_features + layer.out_features
-    return params
-
 def measure_inference_latency(model, test_dataset, device, warmup_itr):
     config = load_yaml('config')
     device = config['device']
@@ -147,22 +143,36 @@ def measure_inference_latency(model, test_dataset, device, warmup_itr):
     plt.savefig(f"out/{model.__class__.__name__}_inference_latency.png")
     plt.close()
 
-def param_count(model, layers):
+def param_count(model):
     # COUNT THE NUMBER OF PARAMETERS
-    params = 0
-    print(f"The number of parameters in each layer of {model.__class__.__name__}:")
-    for layer in layers:
-        params += print_params_layer(layer)
-    print(f"The total number of parameters in {model.__class__.__name__}: {params:,}")
+    for name, param in model.named_parameters():
+        print(f"{name}:\t{param.numel()}")
 
-def FLOPs_count(model, layers):
+def FLOPs_count(model):
     # COUNT FLOPs (Floating Point Operations) OF LINEAR LAYERS; Consider FMA (Fused Multiply-Add) is used in the hardware architecture.
+    layers = get_layers(model)
     fc_layers = [layer for layer in layers if "Linear" in layer.__class__.__name__]
     FLOPs = 0
     for _, fc_layer in enumerate(fc_layers):
         MAC = fc_layer.in_features * fc_layer.out_features # Multiply-Accumulate
         FLOPs += 2 * MAC # 1 FLOP ~= 2 MAC for FMA
     print(f"The total FLOPs in {model.__class__.__name__}: {FLOPs/1e9:.6f} GFLOPs")
+
+def accuracy(model, test_dataset, device):
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    # ACCURACY COMPUTATION
+    model.eval()
+    with torch.no_grad():
+        correct = 0
+        for input_batch in test_dataloader:
+            features, labels = input_batch
+            features = features.to(device)
+            labels = labels.to(device)
+            outputs = model(features)
+            _, predicted = torch.max(outputs.data, dim=1)
+            correct += (predicted == labels).sum().item()
+        acc = correct / len(test_dataloader.dataset) * 100
+        print(f"Accuracy: {acc:.3f}%")
 
 def save_model_weights(model, fname):
     if not os.path.exists("out"):
