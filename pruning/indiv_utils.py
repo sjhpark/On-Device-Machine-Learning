@@ -71,7 +71,7 @@ class Sparsity():
             if isinstance(layer, nn.Linear):
                 sparisty = torch.sum(layer.weight == 0)
                 num_elements = layer.weight.nelement()
-                print(f"\t{layer.__class__.__name__}: {100. * float(sparisty) / float(num_elements)}%")
+                print(f"Sparsity of {layer.__class__.__name__}: {100. * float(sparisty) / float(num_elements)}%")
 
     def global_level(self):
         sparisty = 0
@@ -81,7 +81,6 @@ class Sparsity():
             if isinstance(layer, nn.Linear):
                 sparisty += torch.sum(layer.weight == 0)
                 num_elements += layer.weight.nelement()
-        
         print(f"Global sparsity: {100. * float(sparisty) / float(num_elements)}%")
 
 def global_unstructured_pruning(model, sparsity_level=0.33):
