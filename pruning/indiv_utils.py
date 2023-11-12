@@ -95,18 +95,17 @@ def global_unstructured_pruning(model, sparsity_level=0.33):
             layers2prune.append((layer, 'weight'))
     prune.global_unstructured(layers2prune, pruning_method=prune.L1Unstructured, amount=sparsity_level)
 
-def size_on_disk(model):
-    '''
-    Reference: https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html
-    '''
+def size_on_disk(model, fname=None):
     dir = 'out'
     if not os.path.exists(dir):
         os.makedirs(dir)
-    torch.save(model.state_dict(), f"{dir}/temp.p")
-    size = os.path.getsize(f"{dir}/temp.p")
-    print(f"Model Size on Disk: {size/1e6} MB")
-    os.remove(f"{dir}/temp.p")
-    return size
+    if isinstance(model, dict): # if model is a state dict
+        print(f'Model Size on Disk: {os.path.getsize(os.path.join(dir,fname))/1e6} MB')
+    elif isinstance(model, nn.Module): # if model is a nn.Module
+        torch.save(model.state_dict(), f"{dir}/temp.p")
+        size = os.path.getsize(f"{dir}/temp.p")
+        print(f"Model Size on Disk: {size/1e6} MB")
+        os.remove(f"{dir}/temp.p")
 
 def measure_inference_latency(model, test_dataset, device, warmup_itr):
     config = load_yaml('config')
