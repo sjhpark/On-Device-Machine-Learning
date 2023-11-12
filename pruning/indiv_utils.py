@@ -145,8 +145,14 @@ def measure_inference_latency(model, test_dataset, device, warmup_itr):
 
 def param_count(model):
     # COUNT THE NUMBER OF PARAMETERS
+    param_dict = {}
+    param_count = 0
     for name, param in model.named_parameters():
-        print(f"{name}:\t{param.numel()}")
+        param_dict[name] = param.numel()
+        param_count += param.numel()
+    print(f"Total Parmeter Count in {model.__class__.__name__}: {param_count}")
+    for key, value in sorted(param_dict.items(), key=lambda item: item[1]):
+        print(f"\t{key}:\t{value}")
 
 def FLOPs_count(model):
     # COUNT FLOPs (Floating Point Operations) OF LINEAR LAYERS; Consider FMA (Fused Multiply-Add) is used in the hardware architecture.
