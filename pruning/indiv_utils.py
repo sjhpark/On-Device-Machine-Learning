@@ -32,10 +32,21 @@ def get_layers(model):
     return layers
 
 class Sparsity():
-    """input: model_layers
-        model_layers: list of layers of a model (run get_all_layers(model) to get this list)"""
+    """
+    input: model_layers
+        model_layers: list of layers of a model (run get_all_layers(model) to get this list)
+    Currently, this class only works for weights of linear layers.
+    """
     def __init__(self, model_layers):
         self.model_layers = model_layers
+    
+    def each_layer(self):
+        for layer in self.model_layers:
+            # if linear layer
+            if isinstance(layer, nn.Linear):
+                sparisty = torch.sum(layer.weight == 0)
+                num_elements = layer.weight.nelement()
+                print(f"\t{layer.__class__.__name__}: {100. * float(sparisty) / float(num_elements)}%")
 
     def global_level(self):
         sparisty = 0
