@@ -77,6 +77,15 @@ class Sparsity():
         
         print(f"Global sparsity: {100. * float(sparisty) / float(num_elements)}%")
 
+def global_unstructured_pruning(model, sparsity_level=0.33):
+    """Global Unstructured Pruning"""
+    layers = get_layers(model=model)
+    layers2prune = []
+    for layer in layers:
+        if isinstance(layer, nn.Linear):
+            layers2prune.append((layer, 'weight'))
+    prune.global_unstructured(layers2prune, pruning_method=prune.L1Unstructured, amount=sparsity_level)
+
 def size_on_disk(model):
     '''
     Reference: https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html
