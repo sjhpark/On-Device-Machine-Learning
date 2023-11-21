@@ -49,7 +49,7 @@ def sparse_representation(model):
         if isinstance(layer, nn.Linear):
             prune.remove(layer, 'weight')
     
-    # Convert parameters to dense representations
+    # Convert parameters to sparse representations
     sd = model.state_dict() # state dict
     for item in sd:
         if 'weight' in item:
