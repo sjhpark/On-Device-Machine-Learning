@@ -43,13 +43,13 @@ def check_buffers(model):
 def sparse_representation(model):
     """Convert a pruned model to a sparse model by removing reparametrization (mask buffers).
     Currently, this function only works for weights of linear layers."""
-    # Remove reparameterization (mask buffers)
+    # Sparsify - Remove reparameterization (mask buffers)
     layers = get_layers(model=model)
     for layer in layers:
         if isinstance(layer, nn.Linear):
             prune.remove(layer, 'weight')
     
-    # Convert parameters to sparse representation
+    # Convert parameters to dense representations
     sd = model.state_dict() # state dict
     for item in sd:
         if 'weight' in item:
